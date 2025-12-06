@@ -25,7 +25,7 @@ const openai = new OpenAI({
 async function callAI(message) {
   try {
     const completion = await openai.chat.completions.create({
-      model: 'openrouter/llama-3.1-8b', // 可換成 openai/gpt-4o
+      model: 'openai/gpt-4o', // 可換成 openai/gpt-4o
       messages: [
         { role: 'system', content: '你是一個幫助使用者的繁體中文助理。' },
         { role: 'user', content: message },
@@ -57,5 +57,5 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log('Server running', PORT));
