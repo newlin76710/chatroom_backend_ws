@@ -25,7 +25,7 @@ const openai = new OpenAI({
 async function callAI(message) {
   try {
     const completion = await openai.chat.completions.create({
-      model: '"openrouter/llama-2-7b-chat', // 可換成 openai/gpt-4o
+      model: '"openai/gpt-3.5-turbo', // 可換成 openai/gpt-4o
       messages: [
         { role: 'system', content: '你是一個幫助使用者的繁體中文助理。' },
         { role: 'user', content: message },
