@@ -2,11 +2,11 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
-import OpenAI from 'openai';
 import cors from 'cors';
 import crypto from 'crypto';
 import pkg from 'pg';
 const { Pool } = pkg;
+import fetch from 'node-fetch'; // Node 18 以下需安裝 node-fetch
 
 dotenv.config();
 
@@ -83,20 +83,21 @@ app.post("/auth/oauth", async (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-//const openai = new OpenAI({ baseURL: process.env.AI_ENDPOINT||'https://openrouter.ai/api/v1', apiKey: process.env.API_KEY||"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" });
-
 async function callAI(message, personality) {
   try {
-    const systemPrompt = `你是一個模擬人格的正常聊天，角色是 ${personality}，請以繁體中文，用這個角色的口吻回答，字數限制 10~35：\n${message}`;
+    const systemPrompt = `你是一個模擬人格的正常聊天，角色是 ${personality}，請以繁體中文，用這個角色的口吻回答，字數限制 10~35：`;
 
-    // Ollama 本地 API 呼叫
-    const res = await fetch('http://220.135.33.190:11434/v1/completions', {
+    const res = await fetch('http://220.135.33.190:11434/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: "wangrongsheng/taiwanllm-7b-v2.1-chat",// 改成你 Ollama 上的模型名稱
-        prompt: systemPrompt,
-        max_tokens: 60         // 控制回覆長度
+        model: "wangrongsheng/taiwanllm-7b-v2.1-chat",
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message }
+        ],
+        max_tokens: 60,
+        temperature: 0.7
       })
     });
 
@@ -106,33 +107,14 @@ async function callAI(message, personality) {
     }
 
     const data = await res.json();
-    return data.completion || '對方回覆失敗，請稍後再試。';
+    // Ollama 回傳 OpenAI-style JSON
+    return data.choices?.[0]?.message?.content || '對方回覆失敗，請稍後再試。';
 
   } catch (err) {
     console.error('callAI error', err);
     return '對方回覆失敗，請稍後再試。';
   }
 }
-
-// // 呼叫 AI
-// async function callAI(message, personality) {
-//   try {
-//     const systemPrompt = `你是一個模擬人格的正常聊天，角色是 ${personality}，請以繁體中文，請用這個角色的口吻回答，字數限字在10~30內：`;
-//     const completion = await openai.chat.completions.create({
-//       //model: 'tngtech/deepseek-r1t2-chimera:free',
-//       //model: "amazon/nova-2-lite-v1:free",
-//       model: "deepseek-r1:7b",
-//       messages: [
-//         { role: 'system', content: systemPrompt },
-//         { role: 'user', content: message }
-//       ]
-//     });
-//     return completion.choices[0].message.content;
-//   } catch (err) {
-//     console.error(err.response?.data || err.message);
-//     return '對方 回覆失敗，請稍後再試。';
-//   }
-// }
 
 io.on('connection', (socket) => {
   console.log('connected', socket.id);
@@ -150,10 +132,9 @@ io.on('connection', (socket) => {
   socket.on('message', async ({ message, user, targetAI }) => {
     io.to(user.room || 'public').emit('message', { user, message });
 
-    // 如果有指定 targetAI → AI 回覆
     if (!targetAI) return;
 
-    const aiPersonality = targetAI; // targetAI 直接作為人格名稱
+    const aiPersonality = targetAI;
     const reply = await callAI(message, aiPersonality);
 
     io.to(user.room || 'public').emit('message', {
