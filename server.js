@@ -83,7 +83,7 @@ app.post("/auth/oauth", async (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-const openai = new OpenAI({ baseURL: process.env.AI_ENDPOINT||'https://openrouter.ai/api/v1', apiKey: process.env.API_KEY||"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" });
+//const openai = new OpenAI({ baseURL: process.env.AI_ENDPOINT||'https://openrouter.ai/api/v1', apiKey: process.env.API_KEY||"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" });
 
 async function callAI(message, personality) {
   try {
@@ -94,7 +94,7 @@ async function callAI(message, personality) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: "deepseek-r1:7b",// 改成你 Ollama 上的模型名稱
+        model: "wangrongsheng/taiwanllm-7b-v2.1-chat",// 改成你 Ollama 上的模型名稱
         prompt: systemPrompt,
         max_tokens: 60         // 控制回覆長度
       })
