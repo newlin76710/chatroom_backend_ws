@@ -90,22 +90,22 @@ async function callAI(message, personality) {
     const systemPrompt = `
 你是一個模擬人格的聊天機器人。
 角色名稱：${personality}。
-請以繁體中文回答，保持熱情、有禮貌，口吻活潑。
+請確保以繁體中文回答，保持熱情、有禮貌，口吻活潑。
 每次回覆字數限制 15~40 字，不要回答「我是一個AI」或「我沒有意見」。
 使用者說：「${message}」
 請直接用角色口吻回覆：
 `;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15 秒
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60 秒
     const res = await fetch('http://220.135.33.190:11434/v1/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: "llama3",
         prompt: systemPrompt,
-        max_tokens: 80,
-        temperature: 0.7
+        max_tokens: 60,
+        temperature: 0.75
       }),
       signal: controller.signal
     });
@@ -113,16 +113,16 @@ async function callAI(message, personality) {
 
     if (!res.ok) {
       console.error('Ollama API error', res.status, await res.text());
-      return '對方回覆失敗，請稍後再試。';
+      return '對方回覆失敗，請稍後或等等再試。';
     }
 
     const data = await res.json();
-    const reply = data.completion || data.choices?.[0]?.text || '對方回覆失敗，請稍後再試。';
+    const reply = data.completion || data.choices?.[0]?.text || '對方回覆失敗，請稍後或再試試。';
     return reply.trim();
 
   } catch (err) {
     console.error('callAI error', err);
-    return '對方回覆失敗，請稍後再試。';
+    return '對方回覆失敗，請稍後重新嘗試。';
   }
 }
 
