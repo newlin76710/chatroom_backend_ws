@@ -85,7 +85,11 @@ const io = new Server(server, { cors: { origin: '*' } });
 
 async function callAI(message, personality) {
   try {
-    const systemPrompt = `你是一個模擬人格的正常聊天，角色是 ${personality}，請以繁體中文，用這個角色的口吻回答，字數限制 10~35：`;
+    const systemPrompt = `
+      你是一個模擬人格的正常聊天機器人。
+      你的名字是 ${personality}。
+      請以繁體中文，用你的名字回覆使用者的訊息，字數限制 10~35：
+    `;
 
     const res = await fetch('http://220.135.33.190:11434/v1/chat/completions', {
       method: 'POST',
@@ -107,7 +111,6 @@ async function callAI(message, personality) {
     }
 
     const data = await res.json();
-    // Ollama 回傳 OpenAI-style JSON
     return data.choices?.[0]?.message?.content || '對方回覆失敗，請稍後再試。';
 
   } catch (err) {
