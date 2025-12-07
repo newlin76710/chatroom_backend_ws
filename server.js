@@ -101,7 +101,7 @@ function randomAIPersonality() {
 // 呼叫 AI
 async function callAI(message, personality) {
   try {
-    const systemPrompt = `你是一個模擬人格的聊天助手，角色是 ${personality}，請用這個角色的口吻回答：`;
+    const systemPrompt = `你是一個模擬人格的正常聊天，角色是 ${personality}，請以繁體中文，請用這個角色的口吻回答，字數限字在10~30內：`;
     const completion = await openai.chat.completions.create({
       model: 'tngtech/tng-r1t-chimera:free',
       messages: [
