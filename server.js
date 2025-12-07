@@ -191,19 +191,30 @@ io.on('connection', (socket) => {
 });
 
 // -----------------------------------
-// 4. 自動 port fallback (3000 → 10000)
+// 4. 自動 port fallback（三個 port）
 // -----------------------------------
+const fallbackPorts = [3000, 10000, 11000]; // 三個可選 fallback port
+let portIndex = 0;
+
 function listenPort(port) {
   server.listen(port, () => {
     console.log(`Server running on port ${port}`);
   }).on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-      console.warn(`Port ${port} 已被占用，嘗試另一個 port`);
-      if (port === 3000) listenPort(10000);
+      console.warn(`Port ${port} 已被占用`);
+      portIndex++;
+      if (portIndex < fallbackPorts.length) {
+        console.log(`嘗試下一個 port: ${fallbackPorts[portIndex]}`);
+        listenPort(fallbackPorts[portIndex]);
+      } else {
+        console.error('所有 fallback port 都被占用，啟動失敗');
+      }
     } else {
       console.error(err);
     }
   });
 }
 
-listenPort(process.env.PORT || 3000);
+// Render 必須使用 process.env.PORT
+const initialPort = process.env.PORT || fallbackPorts[portIndex];
+listenPort(initialPort);
