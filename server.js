@@ -98,25 +98,54 @@ function randomAIPersonality() {
   return `${maritalStatus}${gender}-${personalityIndex}`;
 }
 
-// 呼叫 AI
 async function callAI(message, personality) {
   try {
-    const systemPrompt = `你是一個模擬人格的正常聊天，角色是 ${personality}，請以繁體中文，請用這個角色的口吻回答，字數限字在10~30內：`;
-    const completion = await openai.chat.completions.create({
-      //model: 'tngtech/deepseek-r1t2-chimera:free',
-      //model: "amazon/nova-2-lite-v1:free",
-      model: "deepseek-r1:7b",
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: message }
-      ]
+    const systemPrompt = `你是一個模擬人格的正常聊天，角色是 ${personality}，請以繁體中文，用這個角色的口吻回答，字數限制 10~35：\n${message}`;
+
+    // Ollama 本地 API 呼叫
+    const res = await fetch('http://220.135.33.190:11434/v1/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: "deepseek-r1:7b",// 改成你 Ollama 上的模型名稱
+        prompt: systemPrompt,
+        max_tokens: 60         // 控制回覆長度
+      })
     });
-    return completion.choices[0].message.content;
+
+    if (!res.ok) {
+      console.error('Ollama API error', res.status, await res.text());
+      return '對方回覆失敗，請稍後再試。';
+    }
+
+    const data = await res.json();
+    return data.completion || '對方回覆失敗，請稍後再試。';
+
   } catch (err) {
-    console.error(err.response?.data || err.message);
-    return '對方 回覆失敗，請稍後再試。';
+    console.error('callAI error', err);
+    return '對方回覆失敗，請稍後再試。';
   }
 }
+
+// // 呼叫 AI
+// async function callAI(message, personality) {
+//   try {
+//     const systemPrompt = `你是一個模擬人格的正常聊天，角色是 ${personality}，請以繁體中文，請用這個角色的口吻回答，字數限字在10~30內：`;
+//     const completion = await openai.chat.completions.create({
+//       //model: 'tngtech/deepseek-r1t2-chimera:free',
+//       //model: "amazon/nova-2-lite-v1:free",
+//       model: "deepseek-r1:7b",
+//       messages: [
+//         { role: 'system', content: systemPrompt },
+//         { role: 'user', content: message }
+//       ]
+//     });
+//     return completion.choices[0].message.content;
+//   } catch (err) {
+//     console.error(err.response?.data || err.message);
+//     return '對方 回覆失敗，請稍後再試。';
+//   }
+// }
 
 io.on('connection', (socket) => {
   console.log('connected', socket.id);
