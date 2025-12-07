@@ -134,20 +134,49 @@ async function callAI(message) {
 io.on('connection', (socket) => {
   console.log('connected', socket.id);
 
+  // 使用者加入房間
   socket.on('joinRoom', ({ room, user }) => {
     socket.join(room);
+
+    // 將使用者名稱存到 socket.data，方便之後斷線或離開使用
+    socket.data.name = user.name;
+    socket.data.room = room;
+
+    // 廣播系統訊息給房間內其他人
     socket.to(room).emit('systemMessage', `${user.name} 加入房間`);
   });
 
+  // 使用者發送訊息
   socket.on('message', async ({ room, message, user }) => {
+    // 廣播訊息給房間內所有人
     io.to(room).emit('message', { user, message });
 
+    // 如果訊息包含 @bot，呼叫 AI 回覆
     if (message.includes('@bot')) {
-      const reply = await callAI(message.replace('@bot', ''));
+      const reply = await callAI(message.replace('@bot', '').trim());
       io.to(room).emit('message', { user: { name: 'AI小助手' }, message: reply });
     }
   });
+
+  // 使用者離開房間
+  socket.on('leaveRoom', () => {
+    const { room, name } = socket.data;
+    if (room) {
+      socket.leave(room);
+      io.to(room).emit('systemMessage', `${name} 離開房間`);
+      socket.data.room = null;
+    }
+  });
+
+  // 斷線事件
+  socket.on('disconnect', () => {
+    const { room, name } = socket.data;
+    if (room) {
+      io.to(room).emit('systemMessage', `${name} 離開房間`);
+    }
+  });
 });
+
 
 // -----------------------------------
 // 4. 自動 port fallback (3000 → 10000)
