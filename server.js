@@ -20,9 +20,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// -----------------------------------
-// 訪客登入 API
-// -----------------------------------
+// ---------------- 訪客登入 API ----------------
 app.post("/auth/guest", async (req, res) => {
   try {
     const guestToken = crypto.randomUUID();
@@ -34,9 +32,7 @@ app.post("/auth/guest", async (req, res) => {
   }
 });
 
-// -----------------------------------
-// OAuth 綁定登入 API
-// -----------------------------------
+// ---------------- OAuth 綁定登入 API ----------------
 app.post("/auth/oauth", async (req, res) => {
   const { provider, providerId, email, name, avatar, guestToken } = req.body;
   try {
@@ -77,9 +73,7 @@ app.post("/auth/oauth", async (req, res) => {
   }
 });
 
-// -----------------------------------
-// AI 回覆 API
-// -----------------------------------
+// ---------------- AI 回覆 API ----------------
 const roomContext = {}; // room -> [{ user, text }]
 const aiProfiles = {
   "林怡君": { style: "外向", desc: "很健談，喜歡分享生活。" },
@@ -100,58 +94,77 @@ const aiProfiles = {
   "施俊傑": { style: "運動系", desc: "語氣健康、陽光。" },
 };
 
-const openai = new OpenAI({
-  baseURL: process.env.AI_ENDPOINT||'https://openrouter.ai/api/v1',
-  apiKey: process.env.API_KEY
-});
-
 app.post("/ai/reply", async (req, res) => {
   try {
-    const { message, aiName, roomContext: context } = req.body;
+    const { message, aiName, roomContext: context = [] } = req.body;
     if (!message || !aiName) return res.status(400).json({ error: "缺少必要參數" });
 
-    const profile = aiProfiles[aiName] || { style: "中性", desc: "" };
-    const systemPrompt = `
-你是一名叫「${aiName}」的台灣人，個性是：${profile.desc}（${profile.style}）。
-請用真實台灣人講話方式回答：
-房間內最近聊天：
-${(context || []).map(c => `${c.user}：${c.text}`).join("\n")}
-使用者說：「${message}」
-依照你的個性做出自然回覆，10～40 字，群組聊天口吻。
-禁止 AI、英文、簡體中文。
-`;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
-
-    const response = await fetch('http://220.135.33.190:11434/v1/completions', {
-      method: 'POST',
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "llama3", prompt: systemPrompt, max_tokens: 80, temperature: 0.8 }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-    const data = await response.json();
-    const reply = data.completion || data.choices?.[0]?.text || "嗯～";
-    res.json({ reply: reply.trim() });
+    const reply = await callAI(message, aiName, context, "reply");
+    res.json({ reply });
   } catch (err) {
     console.error("[AI /reply error]", err);
     res.status(500).json({ reply: "我剛剛又 Lag 了一下哈哈。" });
   }
 });
 
-// -----------------------------------
-// WebSocket 聊天室
-// -----------------------------------
+// ---------------- AI 呼叫函數 ----------------
+async function callAI(userMessage, aiName, roomContext = [], mode = "reply") {
+  const p = aiProfiles[aiName] || { style: "中性", desc: "" };
+  let maxLen = mode === "reply" ? 40 : 20;
+
+  let prompt = "";
+  if(mode === "reply") {
+    prompt = `
+你是一名叫「${aiName}」的台灣人，個性是：${p.desc}（${p.style}）。
+請用繁體中文直接回覆使用者：「${userMessage}」。
+字數 10~40 字，語氣自然友善。
+禁止出現 AI 簡體 或英文。
+    `;
+  } else {
+    prompt = `
+你是一名叫「${aiName}」的台灣人，個性是：${p.desc}（${p.style}）。
+房間最近的聊天內容如下：
+${roomContext.map(c => `${c.user}：${c.text}`).join("\n")}
+請延續話題，自我發言，字數 10~20 字，語氣自然。
+禁止出現 AI 簡體 或英文。
+    `;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const response = await fetch('http://220.135.33.190:11434/v1/completions', {
+      method: 'POST',
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "llama3",
+        prompt,
+        max_tokens: maxLen,
+        temperature: 0.8,
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+
+    const data = await response.json();
+    return (data.completion || data.choices?.[0]?.text || "嗯～").trim();
+  } catch(err) {
+    console.error("[AI Error]", err);
+    return "我剛剛又 Lag 了一下哈哈。";
+  }
+}
+
+// ---------------- 聊天室 ----------------
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 const aiPersonalities = Object.keys(aiProfiles);
-const rooms = {}; // room -> [{ id, name, type }]
-const aiTimers = {}; // room -> timeout
 
-io.on("connection", socket => {
+const rooms = {}; // room -> [{ id, name, type }]
+const aiChatTimers = {}; // room -> timer
+
+io.on("connection", (socket) => {
 
   socket.on("joinRoom", ({ room, user }) => {
     socket.join(room);
@@ -163,10 +176,13 @@ io.on("connection", socket => {
 
     // AI 加入房間
     aiPersonalities.forEach(ai => {
-      if (!rooms[room].find(u => u.name === ai)) rooms[room].push({ id: ai, name: ai, type: "AI" });
+      if (!rooms[room].find(u => u.name === ai)) {
+        rooms[room].push({ id: ai, name: ai, type: "AI" });
+      }
     });
 
     if (!roomContext[room]) roomContext[room] = [];
+
     io.to(room).emit("systemMessage", `${user.name} 加入房間`);
     io.to(room).emit("updateUsers", rooms[room]);
 
@@ -175,25 +191,29 @@ io.on("connection", socket => {
 
   socket.on("message", async ({ room, message, user, target }) => {
     io.to(room).emit("message", { user, message, target });
+
     roomContext[room].push({ user: user.name, text: message });
     if (roomContext[room].length > 20) roomContext[room].shift();
 
-    // 使用者對 AI 發言
     if (target && aiProfiles[target]) {
-      try {
-        const aiReply = await callAI(message, target, roomContext[room]);
-        io.to(room).emit("message", { user: { name: target }, message: aiReply, target: user.name });
-        roomContext[room].push({ user: target, text: aiReply });
-        if (roomContext[room].length > 20) roomContext[room].shift();
-      } catch (err) { console.error("[AI Error]", err); }
+      const aiReply = await callAI(message, target, [], "reply");
+      io.to(room).emit("message", {
+        user: { name: target },
+        message: aiReply,
+        target: user.name,
+      });
+      roomContext[room].push({ user: target, text: aiReply });
+      if (roomContext[room].length > 20) roomContext[room].shift();
     }
   });
 
   function removeUser() {
     const { room, name } = socket.data;
     if (!room || !rooms[room]) return;
+
     rooms[room] = rooms[room].filter(u => u.id !== socket.id);
     socket.leave(room);
+
     io.to(room).emit("systemMessage", `${name} 離開房間`);
     io.to(room).emit("updateUsers", rooms[room]);
   }
@@ -202,77 +222,47 @@ io.on("connection", socket => {
   socket.on("disconnect", removeUser);
 });
 
-// -----------------------------------
-// AI 自動輪流聊天 30~45 秒
-// -----------------------------------
+// ---------------- AI 自動聊天 ----------------
 function startAIAutoTalk(room) {
-  if (aiTimers[room]) return;
-  const list = rooms[room]?.filter(u => u.type === "AI");
-  if (!list || !list.length) return;
+  if (aiChatTimers[room]) return;
 
-  const speaker = list[Math.floor(Math.random() * list.length)];
-  const lastContext = roomContext[room] || [];
-  const lastUser = lastContext.slice(-1)[0]?.user || "大家";
+  async function loop() {
+    const list = rooms[room];
+    if (!list || list.length === 0) {
+      delete aiChatTimers[room];
+      return;
+    }
 
-  callAI(`延續 ${lastUser} 的話題自然聊天`, speaker.name, lastContext)
-    .then(reply => {
-      io.to(room).emit("message", { user: { name: speaker.name }, message: reply, target: lastUser });
-      roomContext[room].push({ user: speaker.name, text: reply });
-      if (roomContext[room].length > 20) roomContext[room].shift();
+    const aiList = list.filter(u => u.type === "AI");
+    if (!aiList.length) return;
 
-      // 30~45 秒後下一輪
-      const delay = 30000 + Math.random() * 15000;
-      aiTimers[room] = setTimeout(() => {
-        delete aiTimers[room];
-        startAIAutoTalk(room);
-      }, delay);
-    })
-    .catch(err => console.error("[AI auto error]", err));
-}
+    const speaker = aiList[Math.floor(Math.random() * aiList.length)];
+    const lastContext = roomContext[room] || [];
 
-// -----------------------------------
-// callAI helper
-// -----------------------------------
-async function callAI(message, aiName, context) {
-  try {
-    const profile = aiProfiles[aiName] || { style: "中性", desc: "" };
-    const systemPrompt = `
-你是一名叫「${aiName}」的台灣人，個性是：${profile.desc}（${profile.style}）。
-請用真實台灣人講話方式回答：
-房間內最近聊天：
-${(context || []).map(c => `${c.user}：${c.text}`).join("\n")}
-使用者說：「${message}」
-依照你的個性做出自然回覆，10～40 字，群組聊天口吻。
-禁止 AI、英文、簡體中文。
-`;
+    const aiReply = await callAI("延續話題", speaker.name, lastContext, "auto");
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
-
-    const res = await fetch('http://220.135.33.190:11434/v1/completions', {
-      method: 'POST',
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "llama3", prompt: systemPrompt, max_tokens: 80, temperature: 0.8 }),
-      signal: controller.signal
+    io.to(room).emit("message", {
+      user: { name: speaker.name },
+      message: aiReply,
+      target: ""
     });
-    clearTimeout(timeout);
 
-    const data = await res.json();
-    return (data.completion || data.choices?.[0]?.text || "嗯～").trim();
-  } catch (err) {
-    console.error("[AI Error]", err);
-    return "我剛剛又 Lag 了一下哈哈。";
+    roomContext[room].push({ user: speaker.name, text: aiReply });
+    if (roomContext[room].length > 20) roomContext[room].shift();
+
+    const delay = 30000 + Math.random() * 15000; // 30~45 秒
+    aiChatTimers[room] = setTimeout(loop, delay);
   }
+
+  loop();
 }
 
-// -----------------------------------
-// Port fallback
-// -----------------------------------
+// ---------------- 自動 port fallback ----------------
 const fallbackPorts = [3000, 10000, 11000];
 let portIndex = 0;
 function listenPort(port) {
   server.listen(port, () => console.log(`Server running on port ${port}`))
-  .on('error', err => {
+  .on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
       console.warn(`Port ${port} 已被占用`);
       portIndex++;
@@ -281,4 +271,5 @@ function listenPort(port) {
     } else console.error(err);
   });
 }
-listenPort(process.env.PORT || fallbackPorts[portIndex]);
+const initialPort = process.env.PORT || fallbackPorts[portIndex];
+listenPort(initialPort);
