@@ -107,113 +107,196 @@ const aiAvatars = {
   "曾雅雯": "/avatars/g08.gif",
   "施俊傑": "/avatars/b08.gif",
 };
+// AI 個性資料
+const aiProfiles = {
+  "林怡君": { style: "外向", desc: "很健談，喜歡分享生活。" },
+  "張雅婷": { style: "害羞", desc: "說話溫柔，句子偏短。" },
+  "陳思妤": { style: "搞笑", desc: "喜歡講幹話、氣氛製造機。" },
+  "黃彥廷": { style: "穩重", desc: "語氣沈穩，回覆較中性。" },
+  "王子涵": { style: "天真", desc: "像可愛弟弟妹妹，很直率。" },
+  "劉家瑋": { style: "暖心", desc: "安撫型，講話溫暖。" },
+  "李佩珊": { style: "外向", desc: "喜歡問問題，擅長帶話題。" },
+  "蔡承翰": { style: "吐槽", desc: "回話直接、喜歡鬧別人。" },
+  "許婉婷": { style: "知性", desc: "講話有邏輯，句型較完整。" },
+  "周俊宏": { style: "開朗", desc: "活潑健談，喜歡講笑話。" },
+  "何詩涵": { style: "文青", desc: "喜歡聊心情與生活感受。" },
+  "鄭宇翔": { style: "沉默", desc: "話不多，但會突然丟一句。" },
+  "郭心怡": { style: "可愛", desc: "語氣甜甜的。" },
+  "江柏翰": { style: "理工男", desc: "講話直白，略呆。" },
+  "曾雅雯": { style: "喜歡八卦", desc: "最愛聊人與人之間的事。" },
+  "施俊傑": { style: "運動系", desc: "語氣健康、陽光。" },
+};
+
 
 const openai = new OpenAI({ baseURL: process.env.AI_ENDPOINT||'https://openrouter.ai/api/v1', apiKey: process.env.API_KEY });
 
 const rooms = {}; // 房間使用者列表: room -> [{ id, name, type }]
+// 儲存房間最新 20 句對話
+const roomContext = {}; // room -> [{ user, text }]
 
-async function callAI(message, personality) {
+// async function callAI(message, personality) {
+//   try {
+//     const systemPrompt = `
+// 你是一名叫「${personality}」的台灣人。
+// 請用繁體中文回覆，語氣要自然、友善、像真的人在聊天。
+// 禁止的用詞例如:禁止簡體中文、禁止英文、
+// 並且嚴格禁止說你是 AI。
+// 使用者跟你說：「${message}」
+// 請你直接以真實世界人類的口吻回覆，字數約 10～35 字。
+// `;
+//     const controller = new AbortController();
+//     const timeout = setTimeout(() => controller.abort(), 60000);
+//     const res = await fetch('http://220.135.33.190:11434/v1/completions', {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({
+//         model: "llama3",
+//         //model: "qwen2.5",
+//         prompt: systemPrompt,
+//         max_tokens: 60,
+//         temperature: 0.7
+//       }),
+//       signal: controller.signal
+//     });
+//     clearTimeout(timeout);
+
+//     if (!res.ok) {
+//       console.error('Ollama API error', res.status, await res.text());
+//       return '安安很高興認識你，我是'+personality+'。';
+//     }
+
+//     const data = await res.json();
+//     const reply = data.completion || data.choices?.[0]?.text || '安安你好，我是'+personality+'。';
+//     return reply.trim();
+//   } catch (err) {
+//     console.error('callAI error', err);
+//     return '安安，我是'+personality+'。';
+//   }
+// }
+
+async function callAI(userMessage, aiName, roomContext) {
   try {
+    const p = aiProfiles[aiName] || { style: "中性", desc: "" };
+
     const systemPrompt = `
-你是一名叫「${personality}」的台灣人。
-請用繁體中文回覆，語氣要自然、友善、像真的人在聊天。
-禁止的用詞例如:禁止簡體中文、禁止英文、
-並且嚴格禁止說你是 AI。
-使用者跟你說：「${message}」
-請你直接以真實世界人類的口吻回覆，字數約 10～35 字。
+你是一名叫「${aiName}」的台灣人，個性是：${p.desc}（${p.style}）。
+
+請用「真實台灣人講話方式」回答，完全禁止出現 AI 相關字眼、禁止英文、禁止簡體中文。
+
+房間內最近的聊天內容如下：
+${roomContext.map(c => `${c.user}：${c.text}`).join("\n")}
+
+使用者剛剛說：「${userMessage}」
+你應該依照自己的個性做出自然回覆，字數 10～40 字，語氣像在群組聊天。
+如果你是搞笑型，可以偶爾講幹話；
+如果你是害羞型，句子短一點；
+如果你是外向型，會主動問問題；
+如果沒有必要就不要問問題。
 `;
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60000);
-    const res = await fetch('http://220.135.33.190:11434/v1/completions', {
+
+    const response = await fetch('http://220.135.33.190:11434/v1/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "llama3",
-        //model: "qwen2.5",
         prompt: systemPrompt,
-        max_tokens: 60,
-        temperature: 0.7
+        max_tokens: 80,
+        temperature: 0.8,
       }),
       signal: controller.signal
     });
     clearTimeout(timeout);
 
-    if (!res.ok) {
-      console.error('Ollama API error', res.status, await res.text());
-      return '安安很高興認識你，我是'+personality+'。';
-    }
+    const data = await response.json();
+    const reply = data.completion || data.choices?.[0]?.text || "嗯嗯～";
 
-    const data = await res.json();
-    const reply = data.completion || data.choices?.[0]?.text || '安安你好，我是'+personality+'。';
     return reply.trim();
+
   } catch (err) {
-    console.error('callAI error', err);
-    return '安安，我是'+personality+'。';
+    console.error("[AI Error]", err);
+    return "我剛剛又 Lag 了一下哈哈。";
   }
 }
 
-io.on('connection', (socket) => {
-  console.log('connected', socket.id);
+// -----------------------------------
+// 統一 WebSocket 事件
+// -----------------------------------
+io.on("connection", (socket) => {
 
-  // 使用者加入房間
-  socket.on('joinRoom', ({ room, user }) => {
+  // -------- joinRoom --------
+  socket.on("joinRoom", ({ room, user }) => {
     socket.join(room);
-    socket.data.name = user.name;
     socket.data.room = room;
+    socket.data.name = user.name;
 
-    // 建立房間陣列
+    // 建立房間資料
     if (!rooms[room]) rooms[room] = [];
-    // 加入使用者
-    rooms[room].push({ id: socket.id, name: user.name, type: 'guest' });
 
-    // AI 人格加入房間
+    // 加入真正使用者
+    rooms[room].push({ id: socket.id, name: user.name, type: "guest" });
+
+    // AI 加入房間（若不存在）
     aiPersonalities.forEach(ai => {
-      if (!rooms[room].find(u => u.name === ai))
-        rooms[room].push({ id: ai, name: ai, type: 'AI' });
+      if (!rooms[room].find(u => u.name === ai)) {
+        rooms[room].push({ id: ai, name: ai, type: "AI" });
+      }
     });
 
-    io.to(room).emit('systemMessage', `${user.name} 加入房間`);
-    io.to(room).emit('updateUsers', rooms[room]);
+    // 初始化上下文
+    if (!roomContext[room]) roomContext[room] = [];
+
+    io.to(room).emit("systemMessage", `${user.name} 加入房間`);
+    io.to(room).emit("updateUsers", rooms[room]);
+
+    // 啟動 AI 自動聊天（避免重複開啟）
+    setTimeout(() => startAIAutoTalk(room), 2000);
   });
 
-  // 發送訊息
-  socket.on('message', async ({ room, message, user, target }) => {
-    // 先廣播原訊息
-    io.to(room).emit('message', { user, message, target });
+  // -------- message --------
+  socket.on("message", async ({ room, message, user, target }) => {
 
-    // 如果 target 是 AI
-    if (target && aiAvatars[target]) {
-      const aiReply = await callAI(message, target); // 呼叫你之前寫的 callAI
-      io.to(room).emit('message', {
+    // 廣播原訊息
+    io.to(room).emit("message", { user, message, target });
+
+    // 更新上下文
+    roomContext[room].push({ user: user.name, text: message });
+    if (roomContext[room].length > 20) roomContext[room].shift();
+
+    // 如果 target 是 AI → AI 回覆
+    if (target && aiProfiles[target]) {
+      const aiReply = await callAI(message, target, roomContext[room]);
+
+      io.to(room).emit("message", {
         user: { name: target },
         message: aiReply,
-        target: user.name, // AI 回覆給原發訊息的人
+        target: user.name,
       });
+
+      // AI 回覆也要加入上下文
+      roomContext[room].push({ user: target, text: aiReply });
+      if (roomContext[room].length > 20) roomContext[room].shift();
     }
   });
 
-  // 離開房間
-  socket.on('leaveRoom', () => {
+  // -------- 離線 / 離開 --------
+  function removeUser() {
     const { room, name } = socket.data;
-    if (room && rooms[room]) {
-      rooms[room] = rooms[room].filter(u => u.id !== socket.id);
-      socket.leave(room);
-      io.to(room).emit('systemMessage', `${name} 離開房間`);
-      io.to(room).emit('updateUsers', rooms[room]);
-    }
-    socket.data.room = null;
-  });
+    if (!room || !rooms[room]) return;
 
-  // 斷線
-  socket.on('disconnect', () => {
-    const { room, name } = socket.data;
-    if (room && rooms[room]) {
-      rooms[room] = rooms[room].filter(u => u.id !== socket.id);
-      io.to(room).emit('systemMessage', `${name} 離開房間`);
-      io.to(room).emit('updateUsers', rooms[room]);
-    }
-  });
+    rooms[room] = rooms[room].filter(u => u.id !== socket.id);
+    socket.leave(room);
+
+    io.to(room).emit("systemMessage", `${name} 離開房間`);
+    io.to(room).emit("updateUsers", rooms[room]);
+  }
+
+  socket.on("leaveRoom", removeUser);
+  socket.on("disconnect", removeUser);
 });
+
 
 // -----------------------------------
 // 4. 自動 port fallback
