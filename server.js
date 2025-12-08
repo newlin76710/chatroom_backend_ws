@@ -76,7 +76,30 @@ app.post("/auth/oauth", async (req, res) => {
     res.status(500).json({ error: "oauth login failed" });
   }
 });
+app.post("/ai/reply", async (req, res) => {
+  try {
+    const { message, aiName, room } = req.body;
 
+    if (!message || !aiName || !room) {
+      return res.status(400).json({ error: "缺少必要參數" });
+    }
+
+    // 取得房間最近 20 條訊息作為上下文
+    const context = roomContext[room] || [];
+
+    const reply = await callAI(message, aiName, context);
+
+    // 將 AI 的回覆加入上下文
+    if (!roomContext[room]) roomContext[room] = [];
+    roomContext[room].push({ user: aiName, text: reply });
+    if (roomContext[room].length > 20) roomContext[room].shift();
+
+    res.json({ reply });
+  } catch (err) {
+    console.error("[AI /reply error]", err);
+    res.status(500).json({ reply: "我剛剛又 Lag 了一下哈哈。" });
+  }
+});
 // -----------------------------------
 // 3. 聊天室 + AI 自動人格
 // -----------------------------------
