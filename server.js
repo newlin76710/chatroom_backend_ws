@@ -63,42 +63,66 @@ async function findGuestByToken(token) {
   return r.rows[0] || null;
 }
 
-// --- 訪客登入（升級版） ---
-// POST /auth/guest
-// body: { oldToken? }
+// -----------------
+// --- 帳號系統 ---
+// -----------------
+
+// 訪客登入
 app.post("/auth/guest", async (req, res) => {
   try {
-    const { oldToken } = req.body || {};
+    const guestToken = crypto.randomUUID();
+    const name = "訪客" + Math.floor(Math.random() * 9999);
 
-    if (oldToken) {
-      const existing = await findGuestByToken(oldToken);
-      if (existing) {
-        return res.json({
-          guestToken: existing.guest_token,
-          name: existing.name
-        });
-      }
-    }
+    await pool.query(
+      `INSERT INTO guest_users (guest_token, name) VALUES ($1, $2)`,
+      [guestToken, name]
+    );
 
-    const g = await createGuest();
-    return res.json(g);
-  } catch (err) {
-    console.error("guest login error:", err);
+    res.json({ guestToken, name });
+  } catch (e) {
+    console.error(e);
     res.status(500).json({ error: "訪客登入失敗" });
   }
 });
 
-// 可選：提供一個用 token 查名字的 API（前端開啟頁面時可驗證 token）
-app.post("/auth/guest/verify", async (req, res) => {
+// 帳號註冊
+app.post("/auth/register", async (req, res) => {
   try {
-    const { token } = req.body || {};
-    if (!token) return res.status(400).json({ error: "missing token" });
-    const g = await findGuestByToken(token);
-    if (!g) return res.status(404).json({ error: "not found" });
-    res.json({ guestToken: g.guest_token, name: g.name });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "verify error" });
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
+
+    const exist = await pool.query(`SELECT id FROM users WHERE username=$1`, [username]);
+    if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
+
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query(`INSERT INTO users (username, password) VALUES ($1, $2)`, [username, hash]);
+
+    res.json({ message: "註冊成功" });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "註冊失敗" });
+  }
+});
+
+// 帳號登入
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
+
+    const result = await pool.query(`SELECT id, username, password FROM users WHERE username=$1`, [username]);
+    if (result.rowCount === 0) return res.status(400).json({ error: "帳號不存在" });
+
+    const user = result.rows[0];
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(400).json({ error: "密碼錯誤" });
+
+    // 簡單 token (可改 JWT)
+    const token = crypto.randomUUID();
+    res.json({ token, name: user.username });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "登入失敗" });
   }
 });
 
