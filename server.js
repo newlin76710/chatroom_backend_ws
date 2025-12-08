@@ -297,6 +297,52 @@ io.on("connection", (socket) => {
   socket.on("disconnect", removeUser);
 });
 
+const aiChatTimers = {};
+
+function startAIAutoTalk(room) {
+  if (aiChatTimers[room]) return; // 已啟動
+
+  async function loop() {
+    const list = rooms[room];
+    if (!list || list.length === 0) {
+      delete aiChatTimers[room];
+      return;
+    }
+
+    const aiList = list.filter(u => u.type === "AI");
+    if (aiList.length === 0) return;
+
+    // 25% 機率發言
+    if (Math.random() < 0.25) {
+      const speaker = aiList[Math.floor(Math.random() * aiList.length)];
+
+      const lastContext = roomContext[room] || [];
+      const lastUser = lastContext.slice(-1)[0]?.user || "大家";
+
+      const aiReply = await callAI(
+        `延續 ${lastUser} 的話題自然聊天`,
+        speaker.name,
+        lastContext
+      );
+
+      io.to(room).emit("message", {
+        user: { name: speaker.name },
+        message: aiReply,
+        target: lastUser,
+      });
+
+      roomContext[room].push({ user: speaker.name, text: aiReply });
+      if (roomContext[room].length > 20) roomContext[room].shift();
+    }
+
+    // 下次聊天時間（18～35秒）
+    const delay = 18000 + Math.random() * 17000;
+    aiChatTimers[room] = setTimeout(loop, delay);
+  }
+
+  loop();
+}
+
 
 // -----------------------------------
 // 4. 自動 port fallback
