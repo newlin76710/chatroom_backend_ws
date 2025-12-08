@@ -145,7 +145,7 @@ function startAIAutoTalk(room) {
 
     const speaker = aiList[Math.floor(Math.random() * aiList.length)];
     const lastContext = roomContext[room] || [];
-    const reply = await callAI("延續話題", speaker.name);
+    const reply = await callAI("繼續延續話題但不要提到我們正在延續話題這幾個字", speaker.name);
 
     io.to(room).emit("message", { user: { name: speaker.name }, message: reply });
     roomContext[room].push({ user: speaker.name, text: reply });
