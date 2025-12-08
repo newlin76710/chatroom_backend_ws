@@ -59,9 +59,13 @@ app.post("/ai/reply", async (req, res) => {
   res.json({ reply });
 });
 
-// --- AI 呼叫函數（簡化版） ---
+// --- AI 呼叫函數（改進版） ---
 async function callAI(userMessage, aiName) {
   const p = aiProfiles[aiName] || { style: "中性", desc: "" };
+  
+  // 動態 max_tokens：訊息長度小於 20，max 30；長訊息可到 60
+  const maxLen = userMessage.length < 20 ? 30 : 60;
+
   try {
     const response = await fetch('http://220.135.33.190:11434/v1/completions', {
       method: 'POST',
@@ -69,10 +73,11 @@ async function callAI(userMessage, aiName) {
       body: JSON.stringify({
         model: "llama3",
         prompt: `你是一名叫「${aiName}」的台灣人，個性是：${p.desc}（${p.style}）。請用繁體中文回覆：「${userMessage}」`,
-        max_tokens: 30,
+        max_tokens: maxLen,
         temperature: 0.8
       })
     });
+
     const data = await response.json();
     return (data.completion || data.choices?.[0]?.text || "嗯～").trim();
   } catch {
