@@ -1,3 +1,4 @@
+// server.js
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
@@ -16,24 +17,11 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// --- AI 設定 ---
+// --- AI 設定 (略，保留你原本 aiProfiles) ---
 const aiProfiles = {
   "林怡君": { style: "外向", desc: "很健談，喜歡分享生活。", level: 5 },
   "張雅婷": { style: "害羞", desc: "說話溫柔，句子偏短。", level: 8 },
-  "陳思妤": { style: "搞笑", desc: "喜歡講幹話、氣氛製造機。", level: 13 },
-  "黃彥廷": { style: "穩重", desc: "語氣沈穩，回覆較中性。", level: 15 },
-  "王子涵": { style: "天真", desc: "像可愛弟弟妹妹，很直率。", level: 17 },
-  "劉家瑋": { style: "暖心", desc: "安撫型，講話溫暖。", level: 20 },
-  "李佩珊": { style: "外向", desc: "喜歡問問題，擅長帶話題。", level: 22 },
-  "蔡承翰": { style: "吐槽", desc: "回話直接、喜歡鬧別人。", level: 25 },
-  "許婉婷": { style: "知性", desc: "講話有邏輯，句型較完整。", level: 31 },
-  "周俊宏": { style: "開朗", desc: "活潑健談，喜歡講笑話。", level: 32 },
-  "何詩涵": { style: "文青", desc: "喜歡聊心情與生活感受。", level: 40 },
-  "鄭宇翔": { style: "沉默", desc: "話不多，但會突然丟一句。", level: 45 },
-  "郭心怡": { style: "可愛", desc: "語氣甜甜的。", level: 47 },
-  "江柏翰": { style: "理工男", desc: "講話直白，略呆。", level: 48 },
-  "曾雅雯": { style: "喜歡八卦", desc: "最愛聊人與人之間的事。", level: 49 },
-  "施俊傑": { style: "運動系", desc: "語氣健康、陽光。", level: 50 },
+  // ... 其餘略 ...
 };
 const aiNames = Object.keys(aiProfiles);
 
@@ -66,7 +54,6 @@ async function findGuestByToken(token) {
 // --- 帳號系統 ---
 // -----------------
 
-// 訪客登入
 app.post("/auth/guest", async (req, res) => {
   try {
     const guest = await createGuest();
@@ -77,7 +64,6 @@ app.post("/auth/guest", async (req, res) => {
   }
 });
 
-// 帳號註冊
 app.post("/auth/register", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -96,7 +82,6 @@ app.post("/auth/register", async (req, res) => {
   }
 });
 
-// 帳號登入
 app.post("/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -117,7 +102,7 @@ app.post("/auth/login", async (req, res) => {
   }
 });
 
-// --- AI 回覆 API ---
+// --- AI 回覆 API (保留) ---
 app.post("/ai/reply", async (req, res) => {
   const { message, aiName } = req.body;
   if (!message || !aiName) return res.status(400).json({ error: "缺少參數" });
@@ -125,7 +110,6 @@ app.post("/ai/reply", async (req, res) => {
   res.json({ reply });
 });
 
-// --- AI 呼叫函數 ---
 async function callAI(userMessage, aiName) {
   const p = aiProfiles[aiName] || { style: "中性", desc: "", level: 99 };
   try {
@@ -146,13 +130,15 @@ async function callAI(userMessage, aiName) {
   }
 }
 
-// --- Socket.io 聊天室 ---
+// --- Socket.io 聊天室（用 B 模式：timestamp 同步） ---
 const rooms = {};
 const roomContext = {};
 const aiTimers = {};
-const videoState = {}; // room -> { currentVideo, queue }
+const videoState = {}; // room -> { currentVideo: {url,user,timestamp,isPlaying,lastUpdate}, queue: [] }
 
 io.on("connection", socket => {
+  console.log("socket connected:", socket.id);
+
   socket.on("joinRoom", ({ room, user }) => {
     socket.join(room);
     const name = user.name || ("訪客" + Math.floor(Math.random() * 999));
@@ -172,10 +158,13 @@ io.on("connection", socket => {
     if (!roomContext[room]) roomContext[room] = [];
     if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
 
+    // 廣播使用者列表 / 系統訊息
     io.to(room).emit("systemMessage", `${name} 加入房間`);
     io.to(room).emit("updateUsers", rooms[room]);
-    io.to(room).emit("videoUpdate", videoState[room].currentVideo);
-    io.to(room).emit("videoQueueUpdate", videoState[room].queue);
+
+    // 當新 user 加入，送他目前的影片狀態與 queue
+    socket.emit("videoUpdate", videoState[room].currentVideo);
+    socket.emit("videoQueueUpdate", videoState[room].queue);
 
     startAIAutoTalk(room);
   });
@@ -194,13 +183,54 @@ io.on("connection", socket => {
     }
   });
 
+  // Play new video (點播) -> 設為 current 並廣播（timestamp = 0, isPlaying = true）
   socket.on("playVideo", ({ room, url, user }) => {
     if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
-    const video = { url, user };
+
+    const now = Date.now();
+    const video = { url, user, timestamp: 0, isPlaying: true, lastUpdate: now };
+
     videoState[room].currentVideo = video;
     videoState[room].queue.push(video);
+
     io.to(room).emit("videoUpdate", video);
     io.to(room).emit("videoQueueUpdate", videoState[room].queue);
+  });
+
+  // Pause -> 計算經過時間，更新 timestamp, isPlaying=false
+  socket.on("pauseVideo", ({ room }) => {
+    const state = videoState[room];
+    if (!state || !state.currentVideo) return;
+    const v = state.currentVideo;
+    if (!v.isPlaying) return;
+
+    const elapsed = (Date.now() - v.lastUpdate) / 1000;
+    v.timestamp = v.timestamp + elapsed;
+    v.isPlaying = false;
+    // lastUpdate 不需更新（因為是暫停狀態）
+    io.to(room).emit("videoUpdate", v);
+  });
+
+  // Resume -> 設 isPlaying = true，更新 lastUpdate
+  socket.on("resumeVideo", ({ room }) => {
+    const state = videoState[room];
+    if (!state || !state.currentVideo) return;
+    const v = state.currentVideo;
+    if (v.isPlaying) return;
+
+    v.isPlaying = true;
+    v.lastUpdate = Date.now();
+    io.to(room).emit("videoUpdate", v);
+  });
+
+  // Seek -> 前端可發 seek 秒數，更新 timestamp/lastUpdate，並廣播
+  socket.on("seekVideo", ({ room, toSeconds }) => {
+    const state = videoState[room];
+    if (!state || !state.currentVideo) return;
+    const v = state.currentVideo;
+    v.timestamp = Number(toSeconds) || 0;
+    v.lastUpdate = Date.now();
+    io.to(room).emit("videoUpdate", v);
   });
 
   const removeUser = () => {
@@ -218,7 +248,7 @@ io.on("connection", socket => {
   socket.on("disconnect", removeUser);
 });
 
-// --- AI 自動對話 ---
+// --- AI 自動對話（保留） ---
 function startAIAutoTalk(room) {
   if (aiTimers[room]) return;
 
@@ -227,7 +257,7 @@ function startAIAutoTalk(room) {
     if (!aiList.length) return;
 
     const speaker = aiList[Math.floor(Math.random() * aiList.length)];
-    const reply = await callAI("繼續延續話題但不要提到我們正在延續話題這幾個字", speaker.name);
+    const reply = await callAI("繼續當前話題但不要提到我們正在繼續話題這幾個字", speaker.name);
 
     io.to(room).emit("message", { user: { name: speaker.name }, message: reply });
     if (!roomContext[room]) roomContext[room] = [];
