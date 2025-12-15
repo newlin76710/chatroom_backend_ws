@@ -185,35 +185,42 @@ io.on("connection", socket => {
     roomContext[room].push({ user: user.name, text: message });
     if (roomContext[room].length > 20) roomContext[room].shift();
 
-    if (mode === "public") {
-      io.to(room).emit("message", { user, message, target: "" });
-    } else if (mode === "private" && target) {
+    if (mode === "private" && target) {
+      // 私聊：只給自己與對方
       const sockets = Array.from(io.sockets.sockets.values());
       sockets.forEach(s => {
         if (s.data.name === target || s.data.name === user.name) {
           s.emit("message", { user, message, target });
         }
       });
+    } else {
+      // 公開訊息：所有人可見
+      io.to(room).emit("message", { user, message, target: target || "" });
     }
 
     // AI 回覆
     if (target && aiProfiles[target]) {
       const reply = await callAI(message, target);
       const aiMsg = { user: { name: target }, message: reply, target: user.name };
-      if (mode === "public") {
-        io.to(room).emit("message", aiMsg);
-      } else if (mode === "private") {
+
+      if (mode === "private") {
+        // 私聊 AI 回覆
         const sockets = Array.from(io.sockets.sockets.values());
         sockets.forEach(s => {
           if (s.data.name === target || s.data.name === user.name) {
             s.emit("message", aiMsg);
           }
         });
+      } else {
+        // 公開 AI 回覆
+        io.to(room).emit("message", aiMsg);
       }
+
       roomContext[room].push({ user: target, text: reply });
       if (roomContext[room].length > 20) roomContext[room].shift();
     }
   });
+
 
   socket.on("playVideo", ({ room, url, user }) => {
     if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
