@@ -180,45 +180,40 @@ io.on("connection", socket => {
     startAIAutoTalk(room);
   });
 
-  socket.on("message", async ({ room, message, user, target }) => {
-
-    // ---------- 私聊 ----------
-    if (target) {
-
-      // 找對方 socket
-      const targetUser = (rooms[room] || []).find(u => u.name === target);
-
-      // 只送給「自己」
-      socket.emit("message", { user, message, target });
-
-      // 只送給「對方」
-      if (targetUser?.id && io.sockets.sockets.get(targetUser.id)) {
-        io.to(targetUser.id).emit("message", { user, message, target });
-      }
-
-      // === AI 私聊 ===
-      if (aiProfiles[target]) {
-        const reply = await callAI(message, target);
-
-        // AI 回覆只給「發送者」
-        socket.emit("message", {
-          user: { name: target },
-          message: reply,
-          target: user.name
-        });
-      }
-
-      return; // ⭐ 私聊結束，不再往下跑
-    }
-
-    // ---------- 公聊 ----------
-    io.to(room).emit("message", { user, message });
-
+  socket.on("message", async ({ room, message, user, target, mode }) => {
     if (!roomContext[room]) roomContext[room] = [];
     roomContext[room].push({ user: user.name, text: message });
     if (roomContext[room].length > 20) roomContext[room].shift();
-  });
 
+    if (mode === "public") {
+      io.to(room).emit("message", { user, message, target: "" });
+    } else if (mode === "private" && target) {
+      const sockets = Array.from(io.sockets.sockets.values());
+      sockets.forEach(s => {
+        if (s.data.name === target || s.data.name === user.name) {
+          s.emit("message", { user, message, target });
+        }
+      });
+    }
+
+    // AI 回覆
+    if (target && aiProfiles[target]) {
+      const reply = await callAI(message, target);
+      const aiMsg = { user: { name: target }, message: reply, target: user.name };
+      if (mode === "public") {
+        io.to(room).emit("message", aiMsg);
+      } else if (mode === "private") {
+        const sockets = Array.from(io.sockets.sockets.values());
+        sockets.forEach(s => {
+          if (s.data.name === target || s.data.name === user.name) {
+            s.emit("message", aiMsg);
+          }
+        });
+      }
+      roomContext[room].push({ user: target, text: reply });
+      if (roomContext[room].length > 20) roomContext[room].shift();
+    }
+  });
 
   socket.on("playVideo", ({ room, url, user }) => {
     if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
