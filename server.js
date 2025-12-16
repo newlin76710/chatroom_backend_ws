@@ -276,14 +276,21 @@ io.on("connection", socket => {
   socket.on("startSong", ({ room, singer, songUrl }) => {
     if (!songState[room]) songState[room] = { queue: [], current: null, scores: [], timer: null };
 
-    // 將新歌曲加入隊列
+    // 加入隊列
     songState[room].queue.push({ singer, url: songUrl });
 
     // 如果沒有正在播放的歌，立即播放下一首
     if (!songState[room].current) playNextSong(room);
   });
 
-  // 播放下一首歌
+  // 評分
+  socket.on("scoreSong", ({ room, score }) => {
+    const state = songState[room];
+    if (!state || !state.current) return;
+    state.scores.push(score);
+  });
+
+  // 播放下一首
   function playNextSong(room) {
     const state = songState[room];
     if (!state.queue.length) {
@@ -296,10 +303,8 @@ io.on("connection", socket => {
     state.scores = [];
     io.to(room).emit("playSong", state.current);
 
-    // 保存當前歌曲資訊，避免被下一首覆蓋
-    const currentSong = { ...state.current };
+    const currentSong = { ...state.current }; // 保存當前歌曲資訊
 
-    // 設定 5 秒自動結算
     if (state.timer) clearTimeout(state.timer);
     state.timer = setTimeout(async () => {
       const scores = state.scores;
@@ -318,9 +323,9 @@ io.on("connection", socket => {
         io.to(room).emit("message", aiComment);
       }, 1500);
 
-      // 自動播放下一首
+      // 播放下一首
       playNextSong(room);
-    }, 5000);
+    }, 5000); // 5 秒後自動結算成績
   }
 
   // 使用者送出評分
