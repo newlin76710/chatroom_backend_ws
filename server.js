@@ -10,7 +10,6 @@ import fs from "fs";
 import path from "path";
 
 const { Pool } = pkg;
-
 dotenv.config();
 
 // --- DB ---
@@ -21,23 +20,24 @@ const pool = new Pool({
 
 // --- AI 設定 ---
 const aiProfiles = {
-  "林怡君": { style: "外向", desc: "很健談，喜歡分享生活。", level: 5 },
-  "張雅婷": { style: "害羞", desc: "說話溫柔，句子偏短。", level: 8 },
-  "陳思妤": { style: "搞笑", desc: "喜歡講幹話、氣氛製造機。", level: 13 },
-  "黃彥廷": { style: "穩重", desc: "語氣沈穩，回覆較中性。", level: 15 },
-  "王子涵": { style: "天真", desc: "像可愛弟弟妹妹，很直率。", level: 17 },
-  "劉家瑋": { style: "暖心", desc: "安撫型，講話溫暖。", level: 20 },
-  "李佩珊": { style: "外向", desc: "喜歡問問題，擅長帶話題。", level: 22 },
-  "蔡承翰": { style: "吐槽", desc: "回話直接、喜歡鬧別人。", level: 25 },
-  "許婉婷": { style: "知性", desc: "講話有邏輯，句型較完整。", level: 31 },
-  "周俊宏": { style: "開朗", desc: "活潑健談，喜歡講笑話。", level: 32 },
-  "何詩涵": { style: "文青", desc: "喜歡聊心情與生活感受。", level: 40 },
-  "鄭宇翔": { style: "沉默", desc: "話不多，但會突然丟一句。", level: 45 },
-  "郭心怡": { style: "可愛", desc: "語氣甜甜的。", level: 47 },
-  "江柏翰": { style: "理工男", desc: "講話直白，略呆。", level: 48 },
-  "曾雅雯": { style: "喜歡八卦", desc: "最愛聊人與人之間的事。", level: 49 },
-  "施俊傑": { style: "運動系", desc: "語氣健康、陽光。", level: 50 },
+  "林怡君": { style: "外向", desc: "很健談，喜歡分享生活。", level: 5, job: "社群行銷" },
+  "張雅婷": { style: "害羞", desc: "說話溫柔，句子偏短。", level: 8, job: "學生" },
+  "陳思妤": { style: "搞笑", desc: "喜歡講幹話、氣氛製造機。", level: 13, job: "喜劇演員" },
+  "黃彥廷": { style: "穩重", desc: "語氣沈穩，回覆較中性。", level: 15, job: "律師" },
+  "王子涵": { style: "天真", desc: "像可愛弟弟妹妹，很直率。", level: 17, job: "大學生" },
+  "劉家瑋": { style: "暖心", desc: "安撫型，講話溫暖。", level: 20, job: "心理諮商師" },
+  "李佩珊": { style: "外向", desc: "喜歡問問題，擅長帶話題。", level: 22, job: "業務專員" },
+  "蔡承翰": { style: "吐槽", desc: "回話直接、喜歡鬧別人。", level: 25, job: "工程師" },
+  "許婉婷": { style: "知性", desc: "講話有邏輯，句型較完整。", level: 31, job: "老師" },
+  "周俊宏": { style: "開朗", desc: "活潑健談，喜歡講笑話。", level: 32, job: "主持人" },
+  "何詩涵": { style: "文青", desc: "喜歡聊心情與生活感受。", level: 40, job: "作家" },
+  "鄭宇翔": { style: "沉默", desc: "話不多，但會突然丟一句。", level: 45, job: "資料分析師" },
+  "郭心怡": { style: "可愛", desc: "語氣甜甜的。", level: 47, job: "幼教老師" },
+  "江柏翰": { style: "理工男", desc: "講話直白，略呆。", level: 48, job: "軟體工程師" },
+  "曾雅雯": { style: "喜歡八卦", desc: "最愛聊人與人之間的事。", level: 49, job: "記者" },
+  "施俊傑": { style: "運動系", desc: "語氣健康、陽光。", level: 50, job: "健身教練" },
 };
+
 const aiNames = Object.keys(aiProfiles);
 
 // --- Express + Socket.io ---
@@ -47,9 +47,7 @@ const io = new Server(server, { cors: { origin: "*" } });
 const __dirname = new URL('.', import.meta.url).pathname;
 const uploadDir = path.join(__dirname, "uploads", "songs");
 
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 app.use("/songs", express.static(uploadDir));
 app.use(cors());
@@ -76,8 +74,6 @@ async function findGuestByToken(token) {
 // -----------------
 // --- 帳號系統 ---
 // -----------------
-
-// 訪客登入
 app.post("/auth/guest", async (req, res) => {
   try {
     const guest = await createGuest();
@@ -88,7 +84,6 @@ app.post("/auth/guest", async (req, res) => {
   }
 });
 
-// 帳號註冊
 app.post("/auth/register", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -107,7 +102,6 @@ app.post("/auth/register", async (req, res) => {
   }
 });
 
-// 帳號登入
 app.post("/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -136,6 +130,7 @@ app.post("/ai/reply", async (req, res) => {
   res.json({ reply });
 });
 
+// --- 歌曲上傳 ---
 app.post("/song/upload", async (req, res) => {
   try {
     const { audioBase64, singer } = req.body;
@@ -146,27 +141,28 @@ app.post("/song/upload", async (req, res) => {
     const filepath = path.join(uploadDir, filename);
 
     fs.writeFileSync(filepath, buffer);
-
-    res.json({
-      url: `/songs/${filename}`
-    });
+    res.json({ url: `/songs/${filename}` });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "upload failed" });
   }
 });
 
-
 // --- AI 呼叫函數 ---
 async function callAI(userMessage, aiName) {
-  const p = aiProfiles[aiName] || { style: "中性", desc: "", level: 99 };
+  const p = aiProfiles[aiName] || { style: "中性", desc: "", level: 99, job: "未知職業" };
+  const jobText = p.job ? `她/他的職業是 ${p.job}，` : "";
+
   try {
     const response = await fetch('http://220.135.33.190:11434/v1/completions', {
       method: 'POST',
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "llama3",
-        prompt: `你是一名叫「${aiName}」的台灣人，個性是：${p.desc}（${p.style}）。請用繁體中文回覆，省略廢話跟自我介紹，控制在10~30字內：「${userMessage}」`,
+        prompt: `
+你是一名叫「${aiName}」的台灣人，個性是：${p.desc}（${p.style}）。
+${jobText}請用繁體中文回覆，省略廢話跟自我介紹，控制在10~30字內：
+「${userMessage}」`,
         temperature: 0.8
       })
     });
@@ -177,6 +173,7 @@ async function callAI(userMessage, aiName) {
     return "我剛剛又 Lag 了一下哈哈。";
   }
 }
+
 async function callAISongComment({ singer, avg }) {
   let mood = "中性評論";
 
@@ -185,12 +182,14 @@ async function callAISongComment({ singer, avg }) {
 
   const aiList = aiNames;
   const aiName = aiList[Math.floor(Math.random() * aiList.length)];
+  const profile = aiProfiles[aiName] || {};
+  const jobText = profile.job ? `她/他的職業是 ${profile.job}，` : "";
 
   const prompt = `
 你是聊天室裡的 AI「${aiName}」
 現在 ${singer} 剛唱完一首歌
 平均分數是 ${avg} 分
-請用「${mood}」風格評論
+${jobText}請用「${mood}」風格評論
 限制 15~30 字
 請用繁體中文，不要自我介紹
 `;
@@ -204,13 +203,13 @@ async function callAISongComment({ singer, avg }) {
   };
 }
 
+
 // --- Socket.io 聊天室 ---
 const rooms = {};
 const roomContext = {};
 const aiTimers = {};
 const videoState = {}; // room -> { currentVideo, queue }
-const songState = {};
-// room -> { singer, songUrl, scores: { socketId: score } }
+const songState = {};  // songState[room] = { queue: [{singer, url}], current: {singer, url}, scores: [], timer: null }
 
 io.on("connection", socket => {
   socket.on("joinRoom", ({ room, user }) => {
@@ -248,18 +247,11 @@ io.on("connection", socket => {
     const msgPayload = { user, message, target: target || "", mode };
 
     if (mode === "private" && target) {
-      // 私聊：只給自己與對方
       const sockets = Array.from(io.sockets.sockets.values());
       sockets.forEach(s => {
-        if (s.data.name === target || s.data.name === user.name) {
-          s.emit("message", msgPayload);
-        }
+        if (s.data.name === target || s.data.name === user.name) s.emit("message", msgPayload);
       });
-    } else if (mode === "public" && target) {
-      // 公開對象訊息：所有人都看得到，但帶上 target
-      io.to(room).emit("message", msgPayload);
     } else {
-      // 普通公開訊息
       io.to(room).emit("message", msgPayload);
     }
 
@@ -267,70 +259,79 @@ io.on("connection", socket => {
     if (target && aiProfiles[target]) {
       const reply = await callAI(message, target);
       const aiMsg = { user: { name: target }, message: reply, target: user.name, mode };
-
       if (mode === "private") {
         const sockets = Array.from(io.sockets.sockets.values());
         sockets.forEach(s => {
-          if (s.data.name === target || s.data.name === user.name) {
-            s.emit("message", aiMsg);
-          }
+          if (s.data.name === target || s.data.name === user.name) s.emit("message", aiMsg);
         });
-      } else {
-        io.to(room).emit("message", aiMsg);
-      }
+      } else io.to(room).emit("message", aiMsg);
 
       roomContext[room].push({ user: target, text: reply });
       if (roomContext[room].length > 20) roomContext[room].shift();
     }
   });
 
+  // --- 歌唱狀態 ---
+  // 使用者開始唱歌 → 加入隊列
   socket.on("startSong", ({ room, singer, songUrl }) => {
-    songState[room] = {
-      singer,
-      url: songUrl,
-      scores: []
-    };
+    if (!songState[room]) songState[room] = { queue: [], current: null, scores: [], timer: null };
 
-    io.to(room).emit("playSong", {
-      singer,
-      songUrl
-    });
+    // 將新歌曲加入隊列
+    songState[room].queue.push({ singer, url: songUrl });
+
+    // 如果沒有正在播放的歌，立即播放下一首
+    if (!songState[room].current) playNextSong(room);
   });
 
-  socket.on("scoreSong", ({ room, score }) => {
-    if (!songState[room]) return;
-
-    songState[room].scores.push(score);
-
-    // 5 秒後結算（只做一次）
-    if (songState[room].scores.length === 1) {
-      setTimeout(async () => {
-        const scores = songState[room].scores;
-        const avg = (
-          scores.reduce((a, b) => a + b, 0) / scores.length
-        ).toFixed(1);
-
-        // ① 公布成績
-        io.to(room).emit("songResult", {
-          singer: songState[room].singer,
-          avg,
-          count: scores.length
-        });
-
-        // ② ★ 加這段：AI 歌評（延遲一點比較有戲）
-        setTimeout(async () => {
-          const aiComment = await callAISongComment({
-            singer: songState[room].singer,
-            avg
-          });
-          io.to(room).emit("message", aiComment);
-        }, 1500);
-
-        delete songState[room];
-      }, 5000);
+  // 播放下一首歌
+  function playNextSong(room) {
+    const state = songState[room];
+    if (!state.queue.length) {
+      state.current = null;
+      io.to(room).emit("playSong", null);
+      return;
     }
+
+    state.current = state.queue.shift();
+    state.scores = [];
+    io.to(room).emit("playSong", state.current);
+
+    // 保存當前歌曲資訊，避免被下一首覆蓋
+    const currentSong = { ...state.current };
+
+    // 設定 5 秒自動結算
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = setTimeout(async () => {
+      const scores = state.scores;
+      const avg = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : 0;
+
+      // 公布成績
+      io.to(room).emit("songResult", {
+        singer: currentSong.singer,
+        avg,
+        count: scores.length
+      });
+
+      // AI 歌評（延遲 1.5 秒）
+      setTimeout(async () => {
+        const aiComment = await callAISongComment({ singer: currentSong.singer, avg });
+        io.to(room).emit("message", aiComment);
+      }, 1500);
+
+      // 自動播放下一首
+      playNextSong(room);
+    }, 5000);
+  }
+
+  // 使用者送出評分
+  socket.on("scoreSong", ({ room, score }) => {
+    const state = songState[room];
+    if (!state || !state.current) return;
+    state.scores.push(score);
   });
 
+
+  // --- YouTube ---
   socket.on("playVideo", ({ room, url, user }) => {
     if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
     const video = { url, user };
