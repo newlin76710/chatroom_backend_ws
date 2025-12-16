@@ -176,6 +176,32 @@ async function callAI(userMessage, aiName) {
     return "我剛剛又 Lag 了一下哈哈。";
   }
 }
+async function callAISongComment({ singer, avg }) {
+  let mood = "中性評論";
+
+  if (avg >= 4.2) mood = "超暖心誇讚";
+  else if (avg < 3.2) mood = "毒舌但幽默";
+
+  const aiList = aiNames;
+  const aiName = aiList[Math.floor(Math.random() * aiList.length)];
+
+  const prompt = `
+你是聊天室裡的 AI「${aiName}」
+現在 ${singer} 剛唱完一首歌
+平均分數是 ${avg} 分
+請用「${mood}」風格評論
+限制 15~30 字
+請用繁體中文，不要自我介紹
+`;
+
+  const text = await callAI(prompt, aiName);
+
+  return {
+    user: { name: aiName },
+    message: `🎤 歌評：${text}`,
+    mode: "public"
+  };
+}
 
 // --- Socket.io 聊天室 ---
 const rooms = {};
@@ -277,21 +303,32 @@ io.on("connection", socket => {
 
     // 5 秒後結算（只做一次）
     if (songState[room].scores.length === 1) {
-      setTimeout(() => {
+      setTimeout(async () => {
         const scores = songState[room].scores;
-        const avg = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
+        const avg = (
+          scores.reduce((a, b) => a + b, 0) / scores.length
+        ).toFixed(1);
 
+        // ① 公布成績
         io.to(room).emit("songResult", {
           singer: songState[room].singer,
           avg,
           count: scores.length
         });
 
+        // ② ★ 加這段：AI 歌評（延遲一點比較有戲）
+        setTimeout(async () => {
+          const aiComment = await callAISongComment({
+            singer: songState[room].singer,
+            avg
+          });
+          io.to(room).emit("message", aiComment);
+        }, 1500);
+
         delete songState[room];
       }, 5000);
     }
   });
-
 
   socket.on("playVideo", ({ room, url, user }) => {
     if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
