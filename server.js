@@ -6,6 +6,9 @@ import cors from 'cors';
 import crypto from 'crypto';
 import pkg from 'pg';
 import bcrypt from "bcryptjs";
+import fs from "fs";
+import path from "path";
+
 const { Pool } = pkg;
 
 dotenv.config();
@@ -41,7 +44,14 @@ const aiNames = Object.keys(aiProfiles);
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
+const __dirname = new URL('.', import.meta.url).pathname;
+const uploadDir = path.join(__dirname, "uploads", "songs");
 
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+app.use("/songs", express.static(uploadDir));
 app.use(cors());
 app.use(express.json());
 
@@ -124,6 +134,27 @@ app.post("/ai/reply", async (req, res) => {
   const reply = await callAI(message, aiName);
   res.json({ reply });
 });
+
+app.post("/song/upload", async (req, res) => {
+  try {
+    const { audioBase64, singer } = req.body;
+    if (!audioBase64) return res.status(400).json({ error: "no audio" });
+
+    const buffer = Buffer.from(audioBase64, "base64");
+    const filename = `${Date.now()}_${singer}.webm`;
+    const filepath = path.join(uploadDir, filename);
+
+    fs.writeFileSync(filepath, buffer);
+
+    res.json({
+      url: `/songs/${filename}`
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "upload failed" });
+  }
+});
+
 
 // --- AI 呼叫函數 ---
 async function callAI(userMessage, aiName) {
@@ -225,12 +256,12 @@ io.on("connection", socket => {
       if (roomContext[room].length > 20) roomContext[room].shift();
     }
   });
-  // --- 🎤 唱歌開始 ---
+
   socket.on("startSong", ({ room, singer, songUrl }) => {
     songState[room] = {
       singer,
-      songUrl,
-      scores: {}
+      url: songUrl,
+      scores: []
     };
 
     io.to(room).emit("playSong", {
@@ -239,30 +270,28 @@ io.on("connection", socket => {
     });
   });
 
-  // --- ⭐ 評分 ---
   socket.on("scoreSong", ({ room, score }) => {
     if (!songState[room]) return;
-    songState[room].scores[socket.id] = score;
+
+    songState[room].scores.push(score);
+
+    // 5 秒後結算（只做一次）
+    if (songState[room].scores.length === 1) {
+      setTimeout(() => {
+        const scores = songState[room].scores;
+        const avg = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
+
+        io.to(room).emit("songResult", {
+          singer: songState[room].singer,
+          avg,
+          count: scores.length
+        });
+
+        delete songState[room];
+      }, 5000);
+    }
   });
 
-  // --- 🏁 結束唱歌 ---
-  socket.on("endSong", ({ room }) => {
-    const state = songState[room];
-    if (!state) return;
-
-    const scores = Object.values(state.scores);
-    const avg = scores.length
-      ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2)
-      : "0.00";
-
-    io.to(room).emit("songResult", {
-      singer: state.singer,
-      avg,
-      count: scores.length
-    });
-
-    delete songState[room];
-  });
 
   socket.on("playVideo", ({ room, url, user }) => {
     if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
