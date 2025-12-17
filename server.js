@@ -210,6 +210,9 @@ const roomContext = {};
 const aiTimers = {};
 const videoState = {}; // room -> { currentVideo, queue }
 const songState = {};  // songState[room] = { queue: [{singer, url}], current: {singer, url}, scores: [], timer: null }
+// 🔹 純顯示用播放列隊（不控制播放）
+const displayQueue = {};
+// room -> [{ type: "song" | "video", name, title }]
 
 io.on("connection", socket => {
   socket.on("joinRoom", ({ room, user }) => {
@@ -272,8 +275,19 @@ io.on("connection", socket => {
   });
 
   // --- 歌唱狀態 ---
+
+
   // 新增歌曲
   socket.on("startSong", ({ room, singer, songUrl }) => {
+    if (!displayQueue[room]) displayQueue[room] = [];
+
+    displayQueue[room].push({
+      type: "song",
+      name: singer,
+      title: "演唱歌曲"
+    });
+
+    io.to(room).emit("displayQueueUpdate", displayQueue[room]);
     if (!songState[room]) songState[room] = { queue: [], current: null, scores: [], timer: null, scoreTimer: null };
     songState[room].queue.push({ singer, url: songUrl });
     if (!songState[room].current) playNextSong(room);
@@ -288,6 +302,15 @@ io.on("connection", socket => {
 
   // --- YouTube ---
   socket.on("playVideo", ({ room, url, user }) => {
+    if (!displayQueue[room]) displayQueue[room] = [];
+
+    displayQueue[room].push({
+      type: "video",
+      name: user?.name || "訪客",
+      title: "點播影片"
+    });
+
+    io.to(room).emit("displayQueueUpdate", displayQueue[room]);
     if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
     const video = { url, user };
     videoState[room].currentVideo = video;
@@ -322,6 +345,10 @@ function playNextSong(room) {
   state.current = state.queue.shift();
   state.scores = [];
   io.to(room).emit("playSong", state.current); // 播放歌曲通知前端
+  if (displayQueue[room]) {
+    displayQueue[room].shift();
+    io.to(room).emit("displayQueueUpdate", displayQueue[room]);
+  }
 
   // 偵聽前端播放完事件，開始倒數 30 秒評分
   if (state.timer) clearTimeout(state.timer);
