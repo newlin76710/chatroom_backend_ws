@@ -81,17 +81,17 @@ async function findGuestByToken(token) {
 // -----------------
 app.post("/auth/guest", async (req, res) => {
   try {
-    const { gender } = req.body; // 前端選擇的性別
-    const safeGender = gender === "male" ? "male" : "female"; // 驗證 gender
+    const { gender } = req.body;
+    const safeGender = gender === "male" ? "male" : "female";
 
+    // 隨機名稱
     const guestName = "訪客" + Math.floor(Math.random() * 10000);
     const now = new Date();
     const guestToken = crypto.randomUUID();
 
-    // 如果訪客也有資料表存紀錄，可以寫入 users
     const result = await pool.query(
-      `INSERT INTO users (username, gender, last_login)
-       VALUES ($1, $2, $3)
+      `INSERT INTO users (username, gender, last_login, account_type)
+       VALUES ($1, $2, $3, 'guest')
        RETURNING id, username, gender`,
       [guestName, safeGender, now]
     );
@@ -105,10 +105,11 @@ app.post("/auth/guest", async (req, res) => {
       last_login: now,
     });
   } catch (err) {
-    console.error(err);
+    console.error("訪客登入錯誤：", err);
     res.status(500).json({ error: "訪客登入失敗" });
   }
 });
+
 
 
 app.post("/auth/register", async (req, res) => {
@@ -149,40 +150,32 @@ app.post("/auth/register", async (req, res) => {
 
 app.post("/auth/login", async (req, res) => {
   try {
-    const { username, password, gender } = req.body; // 接收前端 gender
-    if (!username || !password) 
+    const { username, password, gender } = req.body;
+    if (!username || !password)
       return res.status(400).json({ error: "缺少帳號或密碼" });
 
-    // 查詢帳號
     const result = await pool.query(
       `SELECT id, username, password, level FROM users WHERE username=$1`,
       [username]
     );
 
-    if (result.rowCount === 0) 
+    if (result.rowCount === 0)
       return res.status(400).json({ error: "帳號不存在" });
 
     const user = result.rows[0];
-
-    // 驗證密碼
     const match = await bcrypt.compare(password, user.password);
-    if (!match) 
-      return res.status(400).json({ error: "密碼錯誤" });
+    if (!match) return res.status(400).json({ error: "密碼錯誤" });
 
-    // 確認 gender 合法
     const safeGender = gender === "male" ? "male" : "female";
-
-    // 更新 gender 與最後登入時間
     const now = new Date();
+
     await pool.query(
-      `UPDATE users SET gender=$1, last_login=$2 WHERE id=$3`,
+      `UPDATE users SET gender=$1, last_login=$2, account_type='account' WHERE id=$3`,
       [safeGender, now, user.id]
     );
 
-    // 生成 token
     const token = crypto.randomUUID();
 
-    // 回傳前端
     res.json({
       token,
       name: user.username,
@@ -195,6 +188,7 @@ app.post("/auth/login", async (req, res) => {
     res.status(500).json({ error: "登入失敗" });
   }
 });
+
 
 // --- AI 回覆 API ---
 app.post("/ai/reply", async (req, res) => {
