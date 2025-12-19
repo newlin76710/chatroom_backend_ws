@@ -314,7 +314,7 @@ io.on("connection", socket => {
     // AI 使用者
     aiNames.forEach(ai => {
       if (!rooms[room].find(u => u.name === ai))
-        rooms[room].push({ id: ai, name: ai, type: "AI", level: aiProfiles[ai]?.level || 99, gender:aiProfiles[ai]?.gender });
+        rooms[room].push({ id: ai, name: ai, type: "AI", level: aiProfiles[ai]?.level || 99, gender: aiProfiles[ai]?.gender });
     });
 
     if (!roomContext[room]) roomContext[room] = [];
@@ -334,17 +334,16 @@ io.on("connection", socket => {
 
     const msgPayload = { user, message, target: target || "", mode };
 
-    // --- 發訊息 + EXP 存 DB ---
     try {
       // 取得使用者資料
       const res = await pool.query(
-        `SELECT id, level, exp FROM users WHERE username=$1`,
+        `SELECT id, level, exp, gender, avatar, account_type FROM users WHERE username=$1`,
         [user.name]
       );
       let dbUser = res.rows[0];
 
       if (dbUser) {
-        let { level, exp, gender } = dbUser;
+        let { level, exp, gender, avatar, account_type } = dbUser;
         exp += 5; // 發訊息 +5 EXP
 
         // 判斷升級
@@ -359,19 +358,20 @@ io.on("connection", socket => {
           [level, exp, dbUser.id]
         );
 
-
         // 更新 rooms[room] 裡的使用者資料
         if (rooms[room]) {
           const roomUser = rooms[room].find(u => u.name === user.name);
           if (roomUser) {
             roomUser.exp = exp;
             roomUser.level = level;
-            roomUser.gender = gender; // <- 更新 gender
+            roomUser.gender = gender;
+            roomUser.avatar = avatar || roomUser.avatar || "/avatars/g01.gif";
+            roomUser.type = account_type || roomUser.type || "guest";
           }
         }
       }
     } catch (err) {
-      console.error("更新 EXP/LV 失敗：", err);
+      console.error("更新 EXP/LV/使用者資料 失敗：", err);
     }
 
     // --- 廣播訊息 ---
@@ -384,8 +384,10 @@ io.on("connection", socket => {
       io.to(room).emit("message", msgPayload);
     }
 
-    // --- 廣播更新使用者 EXP / LV ---
-    io.to(room).emit("updateUsers", rooms[room]);
+    // --- 廣播更新使用者 EXP / LV / avatar / type ---
+    if (rooms[room]) {
+      io.to(room).emit("updateUsers", rooms[room]);
+    }
 
     // --- AI 回覆 ---
     if (target && aiProfiles[target]) {
@@ -402,6 +404,7 @@ io.on("connection", socket => {
       if (roomContext[room].length > 20) roomContext[room].shift();
     }
   });
+
 
   // --- 歌唱狀態 ---
   // 新增歌曲
