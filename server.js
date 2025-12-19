@@ -84,16 +84,16 @@ app.post("/auth/guest", async (req, res) => {
     const { gender } = req.body;
     const safeGender = gender === "male" ? "male" : "female";
 
-    // 隨機名稱
     const guestName = "訪客" + Math.floor(Math.random() * 10000);
     const now = new Date();
     const guestToken = crypto.randomUUID();
+    const randomPassword = crypto.randomBytes(8).toString("hex"); // 隨機密碼
 
     const result = await pool.query(
-      `INSERT INTO users (username, gender, last_login, account_type)
-       VALUES ($1, $2, $3, 'guest')
+      `INSERT INTO users (username, password, gender, last_login, account_type)
+       VALUES ($1, $2, $3, $4, 'guest')
        RETURNING id, username, gender`,
-      [guestName, safeGender, now]
+      [guestName, randomPassword, safeGender, now]
     );
 
     const guest = result.rows[0];
@@ -109,8 +109,6 @@ app.post("/auth/guest", async (req, res) => {
     res.status(500).json({ error: "訪客登入失敗" });
   }
 });
-
-
 
 app.post("/auth/register", async (req, res) => {
   try {
@@ -146,7 +144,6 @@ app.post("/auth/register", async (req, res) => {
     res.status(500).json({ error: "註冊失敗" });
   }
 });
-
 
 app.post("/auth/login", async (req, res) => {
   try {
@@ -188,7 +185,6 @@ app.post("/auth/login", async (req, res) => {
     res.status(500).json({ error: "登入失敗" });
   }
 });
-
 
 // --- AI 回覆 API ---
 app.post("/ai/reply", async (req, res) => {
