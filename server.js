@@ -428,6 +428,19 @@ io.on("connection", socket => {
 
 
   // --- 歌唱狀態 ---
+  // --- 即時語音廣播 ---
+  socket.on("start-singing", ({ room, singer }) => {
+    socket.join(room);
+    socket.to(room).emit("user-start-singing", { singer });
+  });
+
+  socket.on("stop-singing", ({ room, singer }) => {
+    socket.to(room).emit("user-stop-singing", { singer });
+  });
+
+  socket.on("voice-broadcast", ({ room, singer, chunk }) => {
+    socket.to(room).emit("voice-broadcast", { singer, chunk });
+  });
   // 新增歌曲
   socket.on("startSong", ({ room, singer, songUrl }) => {
     if (!displayQueue[room]) displayQueue[room] = [];
