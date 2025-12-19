@@ -283,50 +283,71 @@ const displayQueue = {};
 io.on("connection", socket => {
   socket.on("joinRoom", async ({ room, user }) => {
     socket.join(room);
-    let name = user.name || ("訪客" + Math.floor(Math.random() * 999));
-    let level = 1, exp = 0, gender = "女";
 
-    // 如果是已註冊帳號，從 DB 拿資料
-    if (user.type === "account") {
-      try {
-        const res = await pool.query(
-          `SELECT username, level, exp, gender FROM users WHERE username=$1`,
-          [user.name]
-        );
-        const dbUser = res.rows[0];
-        if (dbUser) {
-          name = dbUser.username;
-          level = dbUser.level || 1;
-          exp = dbUser.exp || 0;
-          gender = dbUser.gender || "女";
-        }
-      } catch (err) {
-        console.error("Socket joinRoom 取得使用者資料錯誤：", err);
+    // --- 預設值 ---
+    let name = user.name || "訪客" + Math.floor(Math.random() * 999);
+    let level = 1;
+    let exp = 0;
+    let gender = "女";
+    let avatar = "/avatars/g01.gif"; // 預設頭像
+    let type = user.type || "guest";
+
+    // --- 從資料庫取得使用者資料 (account 或 guest) ---
+    try {
+      const res = await pool.query(
+        `SELECT username, level, exp, gender, avatar FROM users WHERE username=$1`,
+        [user.name]
+      );
+      const dbUser = res.rows[0];
+      if (dbUser) {
+        name = dbUser.username;
+        level = dbUser.level || 1;
+        exp = dbUser.exp || 0;
+        gender = dbUser.gender || "女";
+        avatar = dbUser.avatar || avatar;
+        type = type === "account" ? "account" : type; // 確保已註冊帳號是 account
       }
+    } catch (err) {
+      console.error("Socket joinRoom 取得使用者資料錯誤：", err);
     }
 
-    socket.data = { room, name, level, gender };
+    // --- 將資料存到 socket 上方便後續使用 ---
+    socket.data = { room, name, level, gender, avatar, type };
 
+    // --- 房間使用者列表 ---
     if (!rooms[room]) rooms[room] = [];
-    if (!rooms[room].find(u => u.name === name))
-      rooms[room].push({ id: socket.id, name, type: user.type || "guest", level, exp, gender });
+    if (!rooms[room].find(u => u.name === name)) {
+      rooms[room].push({ id: socket.id, name, type, level, exp, gender, avatar });
+    }
 
-    // AI 使用者
+    // --- 加入 AI 使用者 ---
     aiNames.forEach(ai => {
-      if (!rooms[room].find(u => u.name === ai))
-        rooms[room].push({ id: ai, name: ai, type: "AI", level: aiProfiles[ai]?.level || 99, gender: aiProfiles[ai]?.gender });
+      if (!rooms[room].find(u => u.name === ai)) {
+        rooms[room].push({
+          id: ai,
+          name: ai,
+          type: "AI",
+          level: aiProfiles[ai]?.level || 99,
+          gender: aiProfiles[ai]?.gender || "女",
+          avatar: aiProfiles[ai]?.avatar || "/avatars/g01.gif",
+        });
+      }
     });
 
+    // --- 初始化房間 context & video state ---
     if (!roomContext[room]) roomContext[room] = [];
     if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
 
+    // --- 廣播訊息與使用者列表 ---
     io.to(room).emit("systemMessage", `${name} 加入房間`);
     io.to(room).emit("updateUsers", rooms[room]);
     io.to(room).emit("videoUpdate", videoState[room].currentVideo);
     io.to(room).emit("videoQueueUpdate", videoState[room].queue);
 
+    // --- 啟動 AI 自動對話 ---
     startAIAutoTalk(room);
   });
+
   socket.on("message", async ({ room, message, user, target, mode }) => {
     if (!roomContext[room]) roomContext[room] = [];
     roomContext[room].push({ user: user.name, text: message });
