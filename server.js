@@ -55,16 +55,21 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ---------- Helper ----------
-async function createGuest() {
+async function createGuest(gender = "female") {
   const token = crypto.randomUUID();
   const name = "訪客 " + Math.floor(1000 + Math.random() * 9000);
   const level = 1;
+  const exp = 0;
+
   await pool.query(
-    "INSERT INTO guest_users (guest_token, name, level) VALUES ($1, $2, $3)",
-    [token, name, level]
+    `INSERT INTO guest_users (guest_token, name, gender, level, exp)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [token, name, gender, level, exp]
   );
-  return { guestToken: token, name, level };
+
+  return { guestToken: token, name, gender, level, exp };
 }
+
 
 async function findGuestByToken(token) {
   const r = await pool.query("SELECT guest_token, name, level FROM guest_users WHERE guest_token = $1", [token]);
@@ -76,24 +81,63 @@ async function findGuestByToken(token) {
 // -----------------
 app.post("/auth/guest", async (req, res) => {
   try {
-    const guest = await createGuest();
-    res.json(guest);
-  } catch (e) {
-    console.error(e);
+    const { gender } = req.body; // 前端選擇的性別
+    const safeGender = gender === "male" ? "male" : "female"; // 驗證 gender
+
+    const guestName = "訪客" + Math.floor(Math.random() * 10000);
+    const now = new Date();
+    const guestToken = crypto.randomUUID();
+
+    // 如果訪客也有資料表存紀錄，可以寫入 users
+    const result = await pool.query(
+      `INSERT INTO users (username, gender, last_login)
+       VALUES ($1, $2, $3)
+       RETURNING id, username, gender`,
+      [guestName, safeGender, now]
+    );
+
+    const guest = result.rows[0];
+
+    res.json({
+      guestToken,
+      name: guest.username,
+      gender: guest.gender,
+      last_login: now,
+    });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "訪客登入失敗" });
   }
 });
 
+
 app.post("/auth/register", async (req, res) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
+    const { username, password, gender, phone, email } = req.body;
 
-    const exist = await pool.query(`SELECT id FROM users WHERE username=$1`, [username]);
-    if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
+    if (!username || !password)
+      return res.status(400).json({ error: "缺少帳號或密碼" });
+
+    const exist = await pool.query(
+      `SELECT id FROM users WHERE username = $1`,
+      [username]
+    );
+    if (exist.rowCount > 0)
+      return res.status(400).json({ error: "帳號已存在" });
 
     const hash = await bcrypt.hash(password, 10);
-    await pool.query(`INSERT INTO users (username, password, level) VALUES ($1, $2, $3)`, [username, hash, 1]);
+
+    await pool.query(
+      `INSERT INTO users (username, password, gender, phone, email, level, exp)
+       VALUES ($1, $2, $3, $4, $5, 1, 0)`,
+      [
+        username,
+        hash,
+        gender || "female",
+        phone || null,
+        email || null,
+      ]
+    );
 
     res.json({ message: "註冊成功" });
   } catch (e) {
@@ -102,20 +146,50 @@ app.post("/auth/register", async (req, res) => {
   }
 });
 
+
 app.post("/auth/login", async (req, res) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
+    const { username, password, gender } = req.body; // 接收前端 gender
+    if (!username || !password) 
+      return res.status(400).json({ error: "缺少帳號或密碼" });
 
-    const result = await pool.query(`SELECT id, username, password, level FROM users WHERE username=$1`, [username]);
-    if (result.rowCount === 0) return res.status(400).json({ error: "帳號不存在" });
+    // 查詢帳號
+    const result = await pool.query(
+      `SELECT id, username, password, level FROM users WHERE username=$1`,
+      [username]
+    );
+
+    if (result.rowCount === 0) 
+      return res.status(400).json({ error: "帳號不存在" });
 
     const user = result.rows[0];
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(400).json({ error: "密碼錯誤" });
 
+    // 驗證密碼
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) 
+      return res.status(400).json({ error: "密碼錯誤" });
+
+    // 確認 gender 合法
+    const safeGender = gender === "male" ? "male" : "female";
+
+    // 更新 gender 與最後登入時間
+    const now = new Date();
+    await pool.query(
+      `UPDATE users SET gender=$1, last_login=$2 WHERE id=$3`,
+      [safeGender, now, user.id]
+    );
+
+    // 生成 token
     const token = crypto.randomUUID();
-    res.json({ token, name: user.username, level: user.level });
+
+    // 回傳前端
+    res.json({
+      token,
+      name: user.username,
+      level: user.level,
+      gender: safeGender,
+      last_login: now,
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "登入失敗" });
