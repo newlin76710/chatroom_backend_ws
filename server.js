@@ -79,21 +79,25 @@ async function findGuestByToken(token) {
 // -----------------
 // --- 帳號系統 ---
 // -----------------
+// --- 帳號系統 ---
+// 訪客登入
 app.post("/auth/guest", async (req, res) => {
   try {
     const { gender } = req.body;
-    const safeGender = gender === "male" ? "male" : "female";
+    const safeGender = gender === "男" ? "男" : "女"; // 中文化
 
     const guestName = "訪客" + Math.floor(Math.random() * 10000);
     const now = new Date();
     const guestToken = crypto.randomUUID();
     const randomPassword = crypto.randomBytes(8).toString("hex"); // 隨機密碼
+    const level = 1;
+    const exp = 0;
 
     const result = await pool.query(
-      `INSERT INTO users (username, password, gender, last_login, account_type)
-       VALUES ($1, $2, $3, $4, 'guest')
-       RETURNING id, username, gender`,
-      [guestName, randomPassword, safeGender, now]
+      `INSERT INTO users (username, password, gender, last_login, account_type, level, exp)
+       VALUES ($1, $2, $3, $4, 'guest', $5, $6)
+       RETURNING id, username, gender, level, exp`,
+      [guestName, randomPassword, safeGender, now, level, exp]
     );
 
     const guest = result.rows[0];
@@ -102,6 +106,8 @@ app.post("/auth/guest", async (req, res) => {
       guestToken,
       name: guest.username,
       gender: guest.gender,
+      level: guest.level,
+      exp: guest.exp,
       last_login: now,
     });
   } catch (err) {
@@ -110,6 +116,7 @@ app.post("/auth/guest", async (req, res) => {
   }
 });
 
+// 註冊
 app.post("/auth/register", async (req, res) => {
   try {
     const { username, password, gender, phone, email } = req.body;
@@ -132,7 +139,7 @@ app.post("/auth/register", async (req, res) => {
       [
         username,
         hash,
-        gender || "female",
+        gender === "男" ? "男" : "女", // 中文化
         phone || null,
         email || null,
       ]
@@ -145,6 +152,7 @@ app.post("/auth/register", async (req, res) => {
   }
 });
 
+// 帳號登入
 app.post("/auth/login", async (req, res) => {
   try {
     const { username, password, gender } = req.body;
@@ -152,7 +160,7 @@ app.post("/auth/login", async (req, res) => {
       return res.status(400).json({ error: "缺少帳號或密碼" });
 
     const result = await pool.query(
-      `SELECT id, username, password, level FROM users WHERE username=$1`,
+      `SELECT id, username, password, level, exp FROM users WHERE username=$1`,
       [username]
     );
 
@@ -163,7 +171,7 @@ app.post("/auth/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ error: "密碼錯誤" });
 
-    const safeGender = gender === "male" ? "male" : "female";
+    const safeGender = gender === "男" ? "男" : "女"; // 中文化
     const now = new Date();
 
     await pool.query(
@@ -177,6 +185,7 @@ app.post("/auth/login", async (req, res) => {
       token,
       name: user.username,
       level: user.level,
+      exp: user.exp,
       gender: safeGender,
       last_login: now,
     });
@@ -185,6 +194,7 @@ app.post("/auth/login", async (req, res) => {
     res.status(500).json({ error: "登入失敗" });
   }
 });
+
 
 // --- AI 回覆 API ---
 app.post("/ai/reply", async (req, res) => {
