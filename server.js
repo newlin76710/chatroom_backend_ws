@@ -430,29 +430,29 @@ io.on("connection", socket => {
   // --- 歌唱狀態 ---
   // --- 即時語音廣播 ---
   // 開始唱歌
+  // WebRTC 信令
+  socket.on("offer", ({ offer, to }) => {
+    io.to(to).emit("offer", { offer, from: socket.id });
+  });
+
+  socket.on("answer", ({ answer, to }) => {
+    io.to(to).emit("answer", { answer, from: socket.id });
+  });
+
+  socket.on("ice-candidate", ({ candidate, to }) => {
+    io.to(to).emit("ice-candidate", { candidate, from: socket.id });
+  });
+
+  // --- 歌唱狀態 ---
   socket.on("start-singing", ({ room, singer }) => {
-    socket.join(room);
     socket.data.isSinging = true;
     socket.data.singer = singer;
-
-    // 廣播給房間所有人
     io.to(room).emit("user-start-singing", { singer });
   });
 
-  // 停止唱歌
   socket.on("stop-singing", ({ room, singer }) => {
     socket.data.isSinging = false;
-
     io.to(room).emit("user-stop-singing", { singer });
-  });
-
-  // 廣播音訊 chunk
-  socket.on("voice-broadcast", ({ room, singer, chunk }) => {
-    // 如果 socket 沒有在唱歌，直接忽略
-    if (!socket.data.isSinging) return;
-
-    // 廣播給房間所有人，包括自己
-    io.to(room).emit("voice-broadcast", { singer, chunk });
   });
   // 新增歌曲
   socket.on("startSong", ({ room, singer, songUrl }) => {
