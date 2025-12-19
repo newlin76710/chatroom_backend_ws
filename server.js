@@ -336,7 +336,7 @@ io.on("connection", socket => {
       let dbUser = res.rows[0];
 
       if (dbUser) {
-        let { level, exp } = dbUser;
+        let { level, exp, gender } = dbUser;
         exp += 5; // 發訊息 +5 EXP
 
         // 判斷升級
@@ -358,6 +358,7 @@ io.on("connection", socket => {
           if (roomUser) {
             roomUser.exp = exp;
             roomUser.level = level;
+            roomUser.gender = gender; // <- 更新 gender
           }
         }
       }
