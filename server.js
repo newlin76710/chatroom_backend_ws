@@ -426,7 +426,11 @@ io.on("connection", socket => {
     }
   });
 
-
+  // 給前端取得房間內其他使用者
+  socket.on("getRoomUsers", (room, callback) => {
+    const users = (rooms[room] || []).filter(u => u.id !== socket.id);
+    callback(users);
+  });
   // --- 歌唱狀態 ---
   // --- 即時語音廣播 ---
   // 開始唱歌
