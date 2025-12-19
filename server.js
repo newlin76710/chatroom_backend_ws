@@ -329,7 +329,7 @@ io.on("connection", socket => {
           type: "AI",
           level: aiProfiles[ai]?.level || 99,
           gender: aiProfiles[ai]?.gender || "女",
-          avatar: aiProfiles[ai]?.avatar || "/avatars/g01.gif",
+          avatar: aiProfiles[ai]?.avatar || null, // <- 保留原本設定
         });
       }
     });
