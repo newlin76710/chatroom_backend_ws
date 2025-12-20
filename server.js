@@ -41,9 +41,6 @@ const aiProfiles = {
 const aiNames = Object.keys(aiProfiles);
 
 // --- Express + Socket.io ---
-
-import cors from "cors";
-
 const app = express();
 app.use(cors()); // Express API 也允許跨域
 app.use(express.json({ limit: '50mb' }));
