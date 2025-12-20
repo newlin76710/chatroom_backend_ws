@@ -42,7 +42,11 @@ const aiNames = Object.keys(aiProfiles);
 
 // --- Express + Socket.io ---
 const app = express();
-app.use(cors()); // Express API 也允許跨域
+app.use(cors({
+  origin: ["http://localhost:5173", "https://boygirl.ek21.com"], // 前端網址
+  methods: ["GET", "POST"],
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 
 const server = http.createServer(app);
