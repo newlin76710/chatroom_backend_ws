@@ -553,28 +553,23 @@ io.on("connection", (socket) => {
 
 
   // --- WebRTC 信令 ---
-  // 唱歌者送 offer 給指定聽眾
-  socket.on("webrtc-offer", ({ offer, to }) => {
+  // --- WebRTC 信令 (一對一 P2P) ---
+  socket.on("webrtc-offer", ({ to, offer }) => {
     const target = Array.from(io.sockets.sockets.values()).find(s => s.data.name === to);
-    if (target) {
-      target.emit("webrtc-offer", { offer, sender: socket.data.name });
-    }
+    if (target) target.emit("webrtc-offer", { offer, sender: socket.data.name });
   });
 
-  // 聽眾回 answer 給唱歌者
-  socket.on("webrtc-answer", ({ answer, to }) => {
+  socket.on("webrtc-answer", ({ to, answer }) => {
     const target = Array.from(io.sockets.sockets.values()).find(s => s.data.name === to);
-    if (target) {
-      target.emit("webrtc-answer", { answer, sender: socket.data.name });
-    }
+    if (target) target.emit("webrtc-answer", { answer, sender: socket.data.name });
   });
 
-  // ICE candidate 傳送給對應 peer
-  socket.on("webrtc-candidate", ({ candidate, to }) => {
-    if (!to) return;
-    const target = Array.from(io.sockets.sockets.values()).find(s => s.data.name === to);
-    if (target) {
-      target.emit("webrtc-candidate", { candidate, sender: socket.data.name });
+  socket.on("webrtc-candidate", ({ to, candidate }) => {
+    if (to) {
+      const target = Array.from(io.sockets.sockets.values()).find(s => s.data.name === to);
+      if (target) target.emit("webrtc-candidate", { candidate, sender: socket.data.name });
+    } else {
+      socket.to(socket.data.room).emit("webrtc-candidate", { candidate, sender: socket.data.name });
     }
   });
 
