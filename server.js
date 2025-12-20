@@ -430,6 +430,14 @@ io.on("connection", (socket) => {
   });
   // 唱歌狀態
   socket.on("start-singing", ({ room, singer }) => {
+    if (!songState[room]) {
+      songState[room] = {
+        currentSinger: null,
+        queue: [],
+        scores: {},
+        scoreTimer: null,
+      };
+    }
     const state = songState[room];
     if (!state) return;
     if (state.currentSinger) return; // 已有人在唱
@@ -443,6 +451,14 @@ io.on("connection", (socket) => {
 
   // 停止唱歌
   socket.on("stop-singing", ({ room, singer }) => {
+    if (!songState[room]) {
+      songState[room] = {
+        currentSinger: null,
+        queue: [],
+        scores: {},
+        scoreTimer: null,
+      };
+    }
     const state = songState[room];
     if (!state || state.currentSinger !== singer) return;
 
