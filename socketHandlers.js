@@ -33,7 +33,15 @@ export function songSocket(io, socket) {
         state.currentSinger = null;
         socket.to(room).emit("user-stop-singing", { singer });
         console.log("🛑 stop-singing emitted public", singer);
-
+        // --- 停止唱歌時踢出所有聽眾 ---
+        if (state.listeners && state.listeners.length > 0) {
+            state.listeners.forEach((listenerId) => {
+                io.to(listenerId).emit("listener-left", { listenerId });
+            });
+            state.listeners = [];
+            io.to(room).emit("update-listeners", { listeners: [] });
+            console.log("🛑 所有聽眾已被踢出房間");
+        }
         if (state.scoreTimer) clearTimeout(state.scoreTimer);
 
         // 處理評分
