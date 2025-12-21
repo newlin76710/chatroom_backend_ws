@@ -15,8 +15,9 @@ export function chatHandlers(io, socket) {
   // --- 加入房間 ---
   socket.on("joinRoom", async ({ room, user }) => {
     socket.join(room);
+    let name = user.name || "訪客" + Math.floor(Math.random()*9999);
+    socket.data.name = name;
     io.to(room).emit("new-user", { socketId: socket.id, name });
-    let name = user.name || "訪客" + Math.floor(Math.random()*999);
     let level = 1, exp = 0, gender = "女", avatar = "/avatars/g01.gif";
     let type = user.type || "guest";
 
