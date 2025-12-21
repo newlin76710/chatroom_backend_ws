@@ -1,29 +1,45 @@
 import { songState } from "./song.js";
 import { callAISongComment } from "./ai.js";
 
+function getRoomState(room) {
+    if (!songState[room]) {
+        songState[room] = {
+            queue: [], 
+            currentSinger: null,
+            scores: {},
+            listeners: [],
+            phase: "idle",
+            scoreTimer: null,
+        };
+    }
+    return songState[room];
+}
+
 export function songSocket(io, socket) {
 
     // ===== 開始唱歌 =====
     socket.on("start-singing", ({ room, singer }) => {
-        if (!songState[room]) songState[room] = { queue: [], currentSinger: null, scores: {}, listeners: [], scoreTimer: null };
-        const state = songState[room];
+        const state = getRoomState(room);
         if (state.currentSinger) return;
         state.currentSinger = singer;
+        state.phase = "singing"; // 更新房間 phase
         if (!state.scores[singer]) state.scores[singer] = [];
 
         socket.join(room);
         io.to(room).emit("user-start-singing", { singer });
+        io.to(room).emit("update-room-phase", { phase: state.phase, singer });
         console.log(`[start-singing] ${singer} 開始唱歌`);
     });
 
     // ===== 停止唱歌 → 評分開始 =====
     socket.on("stop-singing", ({ room, singer }) => {
-        const state = songState[room];
+        const state = getRoomState(room);
         if (!state || state.currentSinger !== singer) return;
         state.currentSinger = null;
-
+        state.phase = "scoring"; // 評分階段
         // 通知房間停止唱歌
         io.to(room).emit("user-stop-singing", { singer });
+        io.to(room).emit("update-room-phase", { phase: state.phase, singer });
         console.log(`[stop-singing] ${singer} 停止唱歌`);
 
         // 廣播評分開始
@@ -53,7 +69,9 @@ export function songSocket(io, socket) {
                 });
             }
             state.listeners = [];
+            state.phase = "idle"; // 評分結束回到 idle
             io.to(room).emit("update-listeners", { listeners: [] });
+            io.to(room).emit("update-room-phase", { phase: state.phase });
         }, 15000);
     });
 

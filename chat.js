@@ -9,12 +9,35 @@ export const aiTimers = {};
 export const videoState = {};
 export const displayQueue = {};
 
+function getRoomState(room) {
+    if (!songState[room]) {
+        songState[room] = {
+            queue: [],
+            currentSinger: null,
+            scores: {},
+            listeners: [],
+            phase: "idle",
+            scoreTimer: null,
+        };
+    }
+    return songState[room];
+}
+
 // Socket.io 聊天邏輯
 export function chatHandlers(io, socket) {
 
     // --- 加入房間 ---
     socket.on("joinRoom", async ({ room, user }) => {
+        const state = getRoomState(room);
         socket.join(room);
+        // 廣播更新房間 phase
+        socket.emit("update-room-phase", {
+            phase: state.phase,
+            singer: state.currentSinger,
+            listeners: state.listeners,
+        });
+        io.to(room).emit("update-listeners", { listeners: state.listeners });
+
         let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
         socket.data.name = name;
         io.to(room).emit("new-user", { socketId: socket.id, name });
@@ -61,7 +84,6 @@ export function chatHandlers(io, socket) {
         if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
         if (!songState[room]) songState[room] = { currentSinger: null, scores: [], scoreTimer: null };
 
-        io.to(room).emit("updateSingingStatus", { currentSinger: songState[room].currentSinger });
         io.to(room).emit("systemMessage", `${name} 加入房間`);
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
