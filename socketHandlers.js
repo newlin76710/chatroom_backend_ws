@@ -13,21 +13,21 @@ export function songSocket(io, socket) {
     if (!state.scores[singer]) state.scores[singer] = [];
 
     socket.to(room).emit("user-start-singing", { singer });
-    console.log("✅ start-singing emitted public");
+    console.log("✅ start-singing emitted public", singer);
   });
 
   // --- 停止唱歌 / 自動下一位 ---
   socket.on("stop-singing", ({ room, singer }) => {
-    if (!songState[room]) return;
     const state = songState[room];
-    if (state.currentSinger !== singer) return;
+    if (!state || state.currentSinger !== singer) return;
 
     state.currentSinger = null;
     socket.to(room).emit("user-stop-singing", { singer });
-    console.log("🛑 stop-singing emitted public");
+    console.log("🛑 stop-singing emitted public", singer);
 
     if (state.scoreTimer) clearTimeout(state.scoreTimer);
 
+    // 計算分數
     state.scoreTimer = setTimeout(async () => {
       const scores = state.scores[singer] || [];
       const avg = scores.length ? scores.reduce((a,b)=>a+b,0)/scores.length : 0;
@@ -42,7 +42,6 @@ export function songSocket(io, socket) {
       }
 
       // 播放下一位
-      if (!Array.isArray(state.queue)) state.queue = [];
       if (state.queue.length > 0) {
         const next = state.queue.shift();
         state.currentSinger = next;
@@ -62,11 +61,12 @@ export function songSocket(io, socket) {
 
   // --- 接收評分 ---
   socket.on("scoreSong", ({ room, score }) => {
-    if (!songState[room] || !songState[room].currentSinger) return;
-    const singer = songState[room].currentSinger;
-
-    if (!songState[room].scores[singer]) songState[room].scores[singer] = [];
-    songState[room].scores[singer].push(score);
+    const state = songState[room];
+    if (!state || !state.currentSinger) return;
+    const singer = state.currentSinger;
+    if (!state.scores[singer]) state.scores[singer] = [];
+    state.scores[singer].push(score);
+    console.log(`[🎵 評分] ${singer} +${score}`);
   });
 
   // --- 聽眾準備接收 WebRTC ---
@@ -76,7 +76,7 @@ export function songSocket(io, socket) {
 
     // 告訴唱歌者建立 WebRTC 連線給這個聽眾
     io.to(singerId).emit("new-listener", { listenerId });
-    console.log("👂 listener-ready:", listenerId);
+    console.log("👂 listener-ready:", listenerId, "→ 通知唱歌者", singerId);
   });
 }
 
@@ -84,26 +84,16 @@ export function songSocket(io, socket) {
 // WebRTC 信令處理
 // -------------------------
 export function webrtcHandlers(io, socket) {
-  // 唱歌者/聽眾都會用這三個事件
-  socket.on("webrtc-offer", ({ room, offer, to, sender }) => {
-    const s = sender || socket.id;
-    if (to) {
-      const target = io.sockets.sockets.get(to);
-      if (target) target.emit("webrtc-offer", { offer, from: s });
-    } else socket.to(room).emit("webrtc-offer", { offer, from: s });
-  });
+  function forward(event, data) {
+    if (!data.to) return;
+    const target = io.sockets.sockets.get(data.to);
+    if (target) {
+      target.emit(event, { ...data, from: socket.id });
+      console.log(`[WebRTC] ${event} from ${socket.id} → ${data.to}`);
+    }
+  }
 
-  socket.on("webrtc-answer", ({ room, answer, to, sender }) => {
-    if (!to) return;
-    const target = io.sockets.sockets.get(to);
-    if (target) target.emit("webrtc-answer", { answer, from: sender || socket.data.name });
-  });
-
-  socket.on("webrtc-candidate", ({ room, candidate, to, sender }) => {
-    const s = sender || socket.data.name;
-    if (to) {
-      const target = io.sockets.sockets.get(to);
-      if (target) target.emit("webrtc-candidate", { candidate, from: s });
-    } else socket.to(room).emit("webrtc-candidate", { candidate, from: s });
-  });
+  socket.on("webrtc-offer", (data) => forward("webrtc-offer", data));
+  socket.on("webrtc-answer", (data) => forward("webrtc-answer", data));
+  socket.on("webrtc-candidate", (data) => forward("webrtc-candidate", data));
 }
