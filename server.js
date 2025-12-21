@@ -11,8 +11,7 @@ import { authRouter } from "./auth.js";
 import { aiRouter } from "./ai.js";
 import { songRouter, songState, displayQueue } from "./song.js";
 import { chatHandlers, startAIAutoTalk, rooms, roomContext } from "./chat.js";
-import { webrtcHandlers } from "./webrtc.js";
-import { songSocket } from "./socketHandlers.js";
+import { songSocket, webrtcHandlers } from "./socketHandlers.js";
 
 dotenv.config();
 
