@@ -1,5 +1,5 @@
 // songSocket.js
-import { songState } from "./song.js";
+import { songState, displayQueue } from "./song.js";
 import { callAISongComment } from "./ai.js";
 
 export function songSocket(io, socket) {
@@ -113,7 +113,7 @@ export function songSocket(io, socket) {
     console.log("🛑 stop-listening:", listenerId);
   });
 
-  // --- YouTube ---
+    // --- YouTube ---
   socket.on("playVideo", ({ room, url, user }) => {
     if (!displayQueue[room]) displayQueue[room] = [];
     displayQueue[room].push({ type: "video", name: user?.name || "訪客", title: "點播影片" });
