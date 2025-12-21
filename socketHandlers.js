@@ -25,6 +25,7 @@ export function songSocket(io, socket) {
         if (!state.scores[singer]) state.scores[singer] = [];
         state.phase = "singing";
         socket.join(room);
+        state.scores[singer] = [];
         const avg = 0;
         const count = 0;
         // 廣播前端重置上一輪分數
