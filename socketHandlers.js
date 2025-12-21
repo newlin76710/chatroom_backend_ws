@@ -78,6 +78,16 @@ export function songSocket(io, socket) {
     io.to(singerId).emit("new-listener", { listenerId });
     console.log("👂 listener-ready:", listenerId, "→ 通知唱歌者", singerId);
   });
+  // --- 聽眾取消聽歌 ---
+  socket.on("stop-listening", ({ room, listenerId }) => {
+    if (!songState[room]) return;
+    const state = songState[room];
+    state.listeners = state.listeners.filter((id) => id !== listenerId);
+
+    // 通知唱歌者移除對應 PC
+    io.to(state.currentSinger).emit("remove-listener", { listenerId });
+    console.log("🛑 stop-listening:", listenerId);
+  });
 }
 
 // -------------------------
