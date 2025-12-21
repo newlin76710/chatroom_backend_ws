@@ -6,7 +6,7 @@ import { callAISongComment } from "./ai.js";
 export const songRouter = express.Router();
 export const songState = {};   // songState[room] = { queue, currentSinger, scores, scoreTimer }
 export const displayQueue = {}; // 純顯示用播放列隊
-
+export const videoState = {}; // room -> { currentVideo, queue }
 const __dirname = new URL('.', import.meta.url).pathname;
 const uploadDir = path.join(__dirname, "uploads", "songs");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
