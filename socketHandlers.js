@@ -89,8 +89,9 @@ export function songSocket(io, socket) {
         if (!state || !state.currentSinger) return;
         const singer = state.currentSinger;
         if (!state.scores[singer]) state.scores[singer] = [];
+        console.log(`Before push, scores[singer]:`, state.scores[singer]);
         state.scores[singer].push(score);
-
+        console.log(`After push, scores[singer]:`, state.scores[singer]);
         socket.emit("scoreAck", { singer, score });
         console.log(`[scoreSong] ${socket.id} 給 ${singer} 評分 ${score}`);
     });
