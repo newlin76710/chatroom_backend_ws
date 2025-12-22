@@ -12,7 +12,11 @@ import { aiRouter } from "./ai.js";
 import { songRouter } from "./song.js";
 import { chatHandlers } from "./chat.js";
 import { songSocket, webrtcHandlers } from "./socketHandlers.js";
-import { initMediasoup, peers, createWebRtcTransport, getRouter } from "./mediasoupServer.js";
+import {
+  initMediasoup,
+  createWebRtcTransport,
+  getRouter
+} from "./mediasoupServer.js";
 
 dotenv.config();
 
@@ -21,59 +25,70 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: ["http://localhost:5173", "https://boygirl.ek21.com"],
-    methods: ["GET","POST"],
+    methods: ["GET", "POST"],
     credentials: true
   },
   transports: ["websocket"]
 });
 
-// Upload directory
+// ===== Upload dir =====
 const __dirname = path.resolve();
 const uploadDir = path.join(__dirname, "uploads", "songs");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-// Middleware
+// ===== Middleware =====
 app.use(cors({
   origin: ["http://localhost:5173", "https://boygirl.ek21.com"],
   methods: ["GET","POST"],
-  credentials: true 
+  credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true }));
 app.use("/songs", express.static(uploadDir));
 
-// Routes
+// ===== Routes =====
 app.use("/auth", authRouter);
 app.use("/ai", aiRouter);
 app.use("/song", songRouter);
-// server.js
+
+// ===== Mediasoup =====
+await initMediasoup();
+
 app.get("/mediasoup-rtpCapabilities", (req, res) => {
   const router = getRouter();
   if (!router) return res.status(500).json({ error: "Router not ready" });
   res.json({ rtpCapabilities: router.rtpCapabilities });
 });
 
-// 初始化 Mediasoup
-await initMediasoup();
+// ===== Peers（PATCH：加 consumers）=====
+const peers = {};
 
-// Socket.io
-io.on("connection", (socket) => {
+// ===== Socket.IO =====
+io.on("connection", socket => {
   console.log(`[socket] ${socket.id} connected`);
-  peers[socket.id] = { transports: [], producers: [] };
 
-  // 聊天 + AI
+  peers[socket.id] = {
+    transports: [],
+    producers: [],
+    consumers: []   // ✅ PATCH
+  };
+
+  // ===== 原本功能：聊天 / AI =====
   chatHandlers(io, socket);
 
-  // WebRTC 信令 + Mediasoup
+  // ===== 原本 WebRTC =====
   webrtcHandlers(io, socket);
 
-  // 歌唱狀態 + 評分
+  // ===== 原本唱歌 / 評分 =====
   songSocket(io, socket);
 
-  // ===== Mediasoup transport 創建 =====
-  socket.on("create-transport", async (_, callback) => {
+  // ===== PATCH：create transport（加 direction）=====
+  socket.on("create-transport", async ({ direction }, callback) => {
     const transport = await createWebRtcTransport();
+    transport.appData = { direction }; // send | recv
+
     peers[socket.id].transports.push(transport);
+
     callback({
       id: transport.id,
       iceParameters: transport.iceParameters,
@@ -82,33 +97,61 @@ io.on("connection", (socket) => {
     });
   });
 
-  // ===== 連線 transport =====
+  // ===== connect transport（不變）=====
   socket.on("connect-transport", async ({ transportId, dtlsParameters }) => {
     const transport = peers[socket.id].transports.find(t => t.id === transportId);
-    if (transport) await transport.connect({ dtlsParameters });
+    if (!transport) return;
+    await transport.connect({ dtlsParameters });
   });
 
-  // ===== produce 音訊 =====
+  // ===== PATCH：produce 只用 send transport =====
   socket.on("produce", async ({ transportId, kind, rtpParameters }, callback) => {
-    const transport = peers[socket.id].transports.find(t => t.id === transportId);
-    if (!transport) return;
+    const transport = peers[socket.id].transports.find(
+      t => t.id === transportId && t.appData.direction === "send"
+    );
+    if (!transport) {
+      console.error("❌ produce: send transport not found");
+      return;
+    }
 
     const producer = await transport.produce({ kind, rtpParameters });
     peers[socket.id].producers.push(producer);
 
-    // 廣播給其他用戶
-    socket.broadcast.emit("new-producer", { producerId: producer.id, producerSocketId: socket.id });
+    console.log("🎤 produce", producer.id);
+
+    socket.broadcast.emit("new-producer", {
+      producerId: producer.id,
+      socketId: socket.id
+    });
+
     callback({ id: producer.id });
   });
 
-  // ===== consume 音訊 =====
+  // ===== PATCH：consume 用 recv transport =====
   socket.on("consume", async ({ producerId, rtpCapabilities }, callback) => {
     const router = getRouter();
-    if (!router.canConsume({ producerId, rtpCapabilities })) return;
+    if (!router.canConsume({ producerId, rtpCapabilities })) {
+      console.error("❌ cannot consume");
+      return;
+    }
 
-    const transport = peers[socket.id].transports[0]; // 假設已建立 recv transport
-    const consumer = await transport.consume({ producerId, rtpCapabilities, paused: false });
-    peers[socket.id].producers.push(consumer);
+    const transport = peers[socket.id].transports.find(
+      t => t.appData.direction === "recv"
+    );
+    if (!transport) {
+      console.error("❌ recv transport not found");
+      return;
+    }
+
+    const consumer = await transport.consume({
+      producerId,
+      rtpCapabilities,
+      paused: false
+    });
+
+    peers[socket.id].consumers.push(consumer);
+
+    console.log("🎧 consume", consumer.id);
 
     callback({
       id: consumer.id,
@@ -118,18 +161,22 @@ io.on("connection", (socket) => {
     });
   });
 
-  // ===== Disconnect =====
+  // ===== PATCH：disconnect 清乾淨 =====
   socket.on("disconnect", () => {
     console.log(`[socket] ${socket.id} disconnected`);
     const peer = peers[socket.id];
-    if (peer) {
-      peer.transports.forEach(t => t.close());
-      peer.producers.forEach(p => p.close());
-      delete peers[socket.id];
-    }
+    if (!peer) return;
+
+    peer.consumers.forEach(c => c.close());
+    peer.producers.forEach(p => p.close());
+    peer.transports.forEach(t => t.close());
+
+    delete peers[socket.id];
   });
 });
 
-// 啟動 Server
+// ===== Start server =====
 const port = process.env.PORT || 10000;
-server.listen(port, () => console.log(`Server running on port ${port}`));
+server.listen(port, () =>
+  console.log(`🚀 Server running on port ${port}`)
+);
