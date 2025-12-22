@@ -1,5 +1,4 @@
 import express from "express";
-import fetch from "node-fetch";
 
 export const aiProfiles = {
   "林怡君": { style: "外向", desc: "很健談，喜歡分享生活。", level: 5, job: "社群行銷", gender: "女" },
