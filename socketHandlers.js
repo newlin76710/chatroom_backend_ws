@@ -16,7 +16,9 @@ function getRoomState(room) {
 }
 
 export function songSocket(io, socket) {
-
+    socket.on("audio-chunk", ({ room, chunk }) => {
+        socket.to(room).emit("audio-stream", chunk);
+    });
     // ===== 開始唱歌 =====
     socket.on("start-singing", ({ room, singer }) => {
         const state = getRoomState(room);
