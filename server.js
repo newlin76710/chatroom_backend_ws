@@ -46,6 +46,12 @@ app.use("/songs", express.static(uploadDir));
 app.use("/auth", authRouter);
 app.use("/ai", aiRouter);
 app.use("/song", songRouter);
+// server.js
+app.get("/mediasoup-rtpCapabilities", (req, res) => {
+  const router = getRouter();
+  if (!router) return res.status(500).json({ error: "Router not ready" });
+  res.json({ rtpCapabilities: router.rtpCapabilities });
+});
 
 // 初始化 Mediasoup
 await initMediasoup();
