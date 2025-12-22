@@ -81,17 +81,19 @@ io.on("connection", (socket) => {
     if (transport) await transport.connect({ dtlsParameters });
   });
 
+  // ===== Produce 音訊 =====
   socket.on("produce", async ({ transportId, kind, rtpParameters }, callback) => {
     const transport = peers[socket.id].transports.find(t => t.id === transportId);
     if (!transport) return;
     const producer = await transport.produce({ kind, rtpParameters });
     peers[socket.id].producers.push(producer);
 
-    // 廣播給其他用戶
+    // 廣播給其他用戶創建 Consumer
     socket.broadcast.emit("new-producer", { producerId: producer.id, producerSocketId: socket.id });
     callback({ id: producer.id });
   });
 
+  // ===== Consume 音訊 =====
   socket.on("consume", async ({ producerId, rtpCapabilities }, callback) => {
     const router = getRouter();
     if (!router.canConsume({ producerId, rtpCapabilities })) return;
@@ -106,6 +108,7 @@ io.on("connection", (socket) => {
     });
   });
 
+  // ===== Disconnect =====
   socket.on("disconnect", () => {
     console.log(`[socket] ${socket.id} disconnected`);
     const peer = peers[socket.id];
@@ -117,5 +120,6 @@ io.on("connection", (socket) => {
   });
 });
 
+// 啟動 Server
 const port = process.env.PORT || 10000;
 server.listen(port, () => console.log(`Server running on port ${port}`));
