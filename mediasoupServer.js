@@ -20,7 +20,7 @@ export function getRouter() {
 
 export async function createWebRtcTransport() {
   const transport = await router.createWebRtcTransport({
-    listenIps: [{ ip: "0.0.0.0", announcedIp: "YOUR_PUBLIC_IP" }],
+    listenIps: [{ ip: "0.0.0.0", announcedIp: "127.0.0.1" }],
     enableUdp: true,
     enableTcp: true,
     preferUdp: true

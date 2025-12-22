@@ -82,33 +82,37 @@ io.on("connection", (socket) => {
     });
   });
 
+  // ===== 連線 transport =====
   socket.on("connect-transport", async ({ transportId, dtlsParameters }) => {
     const transport = peers[socket.id].transports.find(t => t.id === transportId);
     if (transport) await transport.connect({ dtlsParameters });
   });
 
-  // ===== Produce 音訊 =====
+  // ===== produce 音訊 =====
   socket.on("produce", async ({ transportId, kind, rtpParameters }, callback) => {
     const transport = peers[socket.id].transports.find(t => t.id === transportId);
     if (!transport) return;
+
     const producer = await transport.produce({ kind, rtpParameters });
     peers[socket.id].producers.push(producer);
 
-    // 廣播給其他用戶創建 Consumer
+    // 廣播給其他用戶
     socket.broadcast.emit("new-producer", { producerId: producer.id, producerSocketId: socket.id });
     callback({ id: producer.id });
   });
 
-  // ===== Consume 音訊 =====
+  // ===== consume 音訊 =====
   socket.on("consume", async ({ producerId, rtpCapabilities }, callback) => {
     const router = getRouter();
     if (!router.canConsume({ producerId, rtpCapabilities })) return;
 
-    const transport = peers[socket.id].transports[0];
+    const transport = peers[socket.id].transports[0]; // 假設已建立 recv transport
     const consumer = await transport.consume({ producerId, rtpCapabilities, paused: false });
+    peers[socket.id].producers.push(consumer);
+
     callback({
       id: consumer.id,
-      producerId: producerId,
+      producerId,
       kind: consumer.kind,
       rtpParameters: consumer.rtpParameters
     });
