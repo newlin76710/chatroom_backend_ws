@@ -30,17 +30,13 @@ export function chatHandlers(io, socket) {
     socket.on("joinRoom", async ({ room, user }) => {
         const state = getRoomState(room);
         socket.join(room);
-        // 廣播更新房間 phase
-        socket.emit("update-room-phase", {
-            phase: state.phase,
-            singer: state.currentSinger,
-            listeners: state.listeners,
-        });
-        io.to(room).emit("update-listeners", { listeners: state.listeners });
+
+        if (!rooms[room]) rooms[room] = [];
+
+        // 檢查使用者是否已存在
+        let existingUser = rooms[room].find(u => u.name === user.name);
 
         let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
-        socket.data.name = name;
-        io.to(room).emit("new-user", { socketId: socket.id, name });
         let level = 1, exp = 0, gender = "女", avatar = "/avatars/g01.gif";
         let type = user.type || "guest";
 
@@ -59,14 +55,22 @@ export function chatHandlers(io, socket) {
             console.error("joinRoom取得使用者資料錯誤：", err);
         }
 
-        socket.data = { room, name, level, gender, avatar, type };
+        // 更新 socket.data
+        socket.data = { room, name, level, exp, gender, avatar, type };
 
-        if (!rooms[room]) rooms[room] = [];
-        if (!rooms[room].find(u => u.name === name)) {
-            rooms[room].push({ id: socket.id, name, type, level, exp, gender, avatar });
+        if (!existingUser) {
+            // ✅ 一定要存 socketId
+            rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gender, avatar });
+        } else {
+            // 已存在，更新 socketId（刷新或重連）
+            existingUser.socketId = socket.id;
+            existingUser.level = level;
+            existingUser.exp = exp;
+            existingUser.gender = gender;
+            existingUser.avatar = avatar;
         }
 
-        // 加入 AI
+        // 加入 AI（如果沒加入過）
         aiNames.forEach(ai => {
             if (!rooms[room].find(u => u.name === ai)) {
                 rooms[room].push({
@@ -75,15 +79,18 @@ export function chatHandlers(io, socket) {
                     type: "AI",
                     level: aiProfiles[ai]?.level || 99,
                     gender: aiProfiles[ai]?.gender || "女",
-                    avatar: aiProfiles[ai]?.avatar || null
+                    avatar: aiProfiles[ai]?.avatar || null,
+                    socketId: null
                 });
             }
         });
 
+        // 初始化房間狀態
         if (!roomContext[room]) roomContext[room] = [];
         if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
         if (!songState[room]) songState[room] = { currentSinger: null, scores: [], scoreTimer: null };
 
+        // 廣播更新
         io.to(room).emit("systemMessage", `${name} 加入房間`);
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
@@ -91,6 +98,7 @@ export function chatHandlers(io, socket) {
 
         startAIAutoTalk(io, room);
     });
+
 
     // --- 聊天訊息 ---
     socket.on("message", async ({ room, message, user, target, mode }) => {
