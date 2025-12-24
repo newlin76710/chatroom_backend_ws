@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
@@ -60,7 +61,7 @@ app.get("/mediasoup-rtpCapabilities", (req, res) => {
   res.json({ rtpCapabilities: router.rtpCapabilities });
 });
 
-// ===== Peers（PATCH：加 consumers）=====
+// ===== Peers（管理 transports / producers / consumers）=====
 const peers = {};
 
 // ===== Socket.IO =====
@@ -70,23 +71,22 @@ io.on("connection", socket => {
   peers[socket.id] = {
     transports: [],
     producers: [],
-    consumers: []   // ✅ PATCH
+    consumers: []
   };
 
   // ===== 原本功能：聊天 / AI =====
   chatHandlers(io, socket);
 
-  // ===== 原本 WebRTC =====
+  // ===== 原本 WebRTC 信令 =====
   webrtcHandlers(io, socket);
 
   // ===== 原本唱歌 / 評分 =====
   songSocket(io, socket);
 
-  // ===== PATCH：create transport（加 direction）=====
+  // ===== Mediasoup Transport 建立 =====
   socket.on("create-transport", async ({ direction }, callback) => {
     const transport = await createWebRtcTransport();
     transport.appData = { direction }; // send | recv
-
     peers[socket.id].transports.push(transport);
 
     callback({
@@ -97,14 +97,14 @@ io.on("connection", socket => {
     });
   });
 
-  // ===== connect transport（不變）=====
+  // ===== Transport 連線 =====
   socket.on("connect-transport", async ({ transportId, dtlsParameters }) => {
     const transport = peers[socket.id].transports.find(t => t.id === transportId);
     if (!transport) return;
     await transport.connect({ dtlsParameters });
   });
 
-  // ===== PATCH：produce 只用 send transport =====
+  // ===== Produce (只能用 send transport) =====
   socket.on("produce", async ({ transportId, kind, rtpParameters }, callback) => {
     const transport = peers[socket.id].transports.find(
       t => t.id === transportId && t.appData.direction === "send"
@@ -119,6 +119,7 @@ io.on("connection", socket => {
 
     console.log("🎤 produce", producer.id);
 
+    // 通知其他人有新 producer
     socket.broadcast.emit("new-producer", {
       producerId: producer.id,
       socketId: socket.id
@@ -127,7 +128,7 @@ io.on("connection", socket => {
     callback({ id: producer.id });
   });
 
-  // ===== PATCH：consume 用 recv transport =====
+  // ===== Consume (用 recv transport) =====
   socket.on("consume", async ({ producerId, rtpCapabilities }, callback) => {
     const router = getRouter();
     if (!router.canConsume({ producerId, rtpCapabilities })) {
@@ -135,9 +136,7 @@ io.on("connection", socket => {
       return;
     }
 
-    const transport = peers[socket.id].transports.find(
-      t => t.appData.direction === "recv"
-    );
+    const transport = peers[socket.id].transports.find(t => t.appData.direction === "recv");
     if (!transport) {
       console.error("❌ recv transport not found");
       return;
@@ -161,7 +160,7 @@ io.on("connection", socket => {
     });
   });
 
-  // ===== PATCH：disconnect 清乾淨 =====
+  // ===== 斷線清理 =====
   socket.on("disconnect", () => {
     console.log(`[socket] ${socket.id} disconnected`);
     const peer = peers[socket.id];
@@ -177,6 +176,4 @@ io.on("connection", socket => {
 
 // ===== Start server =====
 const port = process.env.PORT || 10000;
-server.listen(port, () =>
-  console.log(`🚀 Server running on port ${port}`)
-);
+server.listen(port, () => console.log(`🚀 Server running on port ${port}`));
