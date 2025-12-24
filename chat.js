@@ -1,7 +1,7 @@
 import { pool } from "./db.js";
 import { callAI, aiNames, aiProfiles } from "./ai.js";
 import { expForNextLevel } from "./utils.js";
-import { songState, playNextSinger } from "./song.js";
+import { songState } from "./song.js";
 
 export const rooms = {};
 export const roomContext = {};
