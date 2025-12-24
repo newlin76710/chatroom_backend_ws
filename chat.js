@@ -169,66 +169,56 @@ export function chatHandlers(io, socket) {
     });
 
     // socketHandlers/chat.js 或 server.js
-    socket.on("kickUser", ({ room, targetName }) => {
+    socket.on("kickUser", async ({ room, targetName }) => {
         console.log("🔹 kickUser received:", room, targetName);
 
         const users = rooms[room];
-        if (!users) {
-            console.log("❌ room not found:", room);
-            return;
-        }
-        console.log("📋 users in room:", users.map(u => ({ name: u.name, socketId: u.socketId, level: u.level })));
+        if (!users) return;
 
         const kicker = users.find(u => u.socketId === socket.id);
-        if (!kicker) {
-            console.log("❌ kicker not found, socket.id =", socket.id);
-            return;
-        }
-        console.log("✅ kicker found:", kicker.name, "level:", kicker.level);
-
-        // 權限檢查
-        if (kicker.level < 99) {
-            console.log("❌ 權限不足:", kicker.name, kicker.level);
+        if (!kicker || kicker.level < 99) {
             socket.emit("kickFailed", { reason: "權限不足" });
             return;
         }
 
-        // 不能踢自己
         if (kicker.name === targetName) {
-            console.log("❌ 不能踢自己:", kicker.name);
             socket.emit("kickFailed", { reason: "不能踢自己" });
             return;
         }
 
         const target = users.find(u => u.name === targetName);
-        if (!target) {
-            console.log("❌ target not found:", targetName);
-            return;
-        }
-        console.log("✅ target found:", target.name, "socketId:", target.socketId);
+        if (!target || !target.socketId) return;
 
         const targetSocket = io.sockets.sockets.get(target.socketId);
-        if (!targetSocket) {
-            console.log("❌ target socket not found:", target.socketId);
-            return;
-        }
-        console.log("✅ target socket found, emitting 'kicked'");
+        if (!targetSocket) return;
 
-        // 通知被踢的人
-        targetSocket.emit("kicked", { by: kicker.name, room });
+        console.log(`👢 Lv99 ${kicker.name} 踢出 ${targetName}`);
 
-        // 強制離開房間
-        targetSocket.leave(room);
+        /* =========================
+           ⭐ 關鍵：對齊後登入踢前
+        ========================= */
 
-        // 從 rooms 移除
-        rooms[room] = users.filter(u => u.name !== targetName);
-        console.log("📋 updated users in room:", rooms[room].map(u => u.name));
+        // 1️⃣ DB token 失效（跟後登入踢前一樣）
+        await pool.query(
+            `UPDATE users
+         SET is_online=false, login_token=NULL
+         WHERE username=$1`,
+            [targetName]
+        );
 
-        // 更新房間使用者列表
-        io.to(room).emit("updateUsers", rooms[room]);
+        // 2️⃣ 通知前端
+        targetSocket.emit("forceLogout", {
+            reason: "你已被 Lv.99 玩家踢出"
+        });
 
-        console.log(`👢 ${kicker.name} 踢出了 ${targetName}`);
+        // 3️⃣ 強制斷線（會自動觸發你原本的 disconnect → removeUser）
+        targetSocket.disconnect(true);
+
+        /* ========================= */
+
+        io.to(room).emit("systemMessage", `${targetName} 被 Lv.99 玩家踢出`);
     });
+
 
     // --- 取得房間使用者 ---
     socket.on("getRoomUsers", (room, callback) => {

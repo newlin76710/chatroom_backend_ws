@@ -58,13 +58,17 @@ authRouter.post("/register", async (req, res) => {
 });
 
 // 登入
+// 登入
 authRouter.post("/login", async (req, res) => {
   try {
-    const { username, password, gender } = req.body;
-    if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "缺少帳號或密碼" });
+    }
 
     const result = await pool.query(
-      `SELECT id, username, password, level, exp, avatar FROM users WHERE username=$1`,
+      `SELECT id, username, password, level, exp, avatar, gender, is_online, login_token
+       FROM users WHERE username=$1`,
       [username]
     );
 
@@ -74,14 +78,68 @@ authRouter.post("/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ error: "密碼錯誤" });
 
-    const safeGender = gender === "男" ? "男" : "女";
     const now = new Date();
-    await pool.query(`UPDATE users SET gender=$1, last_login=$2, account_type='account' WHERE id=$3`, [safeGender, now, user.id]);
+    const token = crypto.randomUUID(); // 新登入 token
 
-    const token = crypto.randomUUID();
-    res.json({ token, name: user.username, level: user.level, exp: user.exp, gender: safeGender, avatar: user.avatar, last_login: now });
+    // --- 1️⃣ 踢掉前登入 ---
+    if (user.is_online && user.login_token) {
+      const oldToken = user.login_token;
+      if (ioTokens.has(oldToken)) {
+        const oldSocketId = ioTokens.get(oldToken);
+        const oldSocket = req.app.get("io").sockets.sockets.get(oldSocketId);
+        if (oldSocket) {
+          oldSocket.emit("forceLogout", { reason: "你的帳號在其他地方登入" });
+          oldSocket.disconnect(true);
+        }
+        ioTokens.delete(oldToken);
+      }
+
+      // 資料庫也把舊 token 清掉
+      await pool.query(
+        `UPDATE users SET is_online=false, login_token=NULL WHERE id=$1`,
+        [user.id]
+      );
+    }
+
+    // --- 2️⃣ 更新新登入 ---
+    await pool.query(
+      `UPDATE users
+       SET last_login=$1, login_token=$2, is_online=true
+       WHERE id=$3`,
+      [now, token, user.id]
+    );
+
+    // --- 3️⃣ 回傳給前端 ---
+    res.json({
+      token,
+      name: user.username,
+      level: user.level,
+      exp: user.exp,
+      gender: user.gender,
+      avatar: user.avatar,
+      last_login: now
+    });
+
+    // ⚠️ 注意：前端拿到 token 後，要建立 socket 連線時，把 token 對應 socket.id
+    // 例如：
+    // ioTokens.set(token, socket.id);
+
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "登入失敗" });
   }
+});
+
+authRouter.post("/logout", async (req, res) => {
+  const { token } = req.body;
+
+  await pool.query(
+    `UPDATE users
+     SET is_online=false,
+         login_token=NULL
+     WHERE login_token=$1`,
+    [token]
+  );
+
+  res.json({ message: "已登出" });
 });
