@@ -93,6 +93,7 @@ export function songSocket(io, socket) {
   socket.on("webrtc-offer", ({ room, offer, singer }) => {
     console.log("📨 webrtc-offer", singer);
     socket.to(room).emit("webrtc-offer", { offer, singer });
+    console.log("offer room:", room, "members:", io.sockets.adapter.rooms.get(room)?.size);
   });
 
   // ===== WebRTC ANSWER =====
