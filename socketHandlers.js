@@ -89,7 +89,28 @@ export function songSocket(io, socket) {
       }
     }
   });
+  // ===== WebRTC OFFER =====
+  socket.on("webrtc-offer", ({ room, offer, singer }) => {
+    console.log("📨 webrtc-offer", singer);
+    socket.to(room).emit("webrtc-offer", { offer, singer });
+  });
 
+  // ===== WebRTC ANSWER =====
+  socket.on("webrtc-answer", ({ room, answer }) => {
+    console.log("📨 webrtc-answer");
+    socket.to(room).emit("webrtc-answer", { answer });
+  });
+
+  // ===== ICE =====
+  socket.on("webrtc-ice", ({ room, candidate }) => {
+    socket.to(room).emit("webrtc-ice", { candidate });
+  });
+
+  // ===== STOP =====
+  socket.on("webrtc-stop", ({ room }) => {
+    console.log("🛑 webrtc-stop");
+    socket.to(room).emit("webrtc-stop");
+  });
 }
 
 // ===== 播放下一位歌手 =====
