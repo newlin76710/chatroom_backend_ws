@@ -19,7 +19,7 @@ authRouter.post("/guest", async (req, res) => {
     const exp = 0;
 
     const result = await pool.query(
-      `INSERT INTO users (username, password, gender, last_login, account_type, level, exp)
+      `INSERT INTO users_ws (username, password, gender, last_login, account_type, level, exp)
        VALUES ($1, $2, $3, $4, 'guest', $5, $6)
        RETURNING id, username, gender, level, exp`,
       [guestName, randomPassword, safeGender, now, level, exp]
@@ -39,12 +39,12 @@ authRouter.post("/register", async (req, res) => {
     const { username, password, gender, phone, email, avatar } = req.body;
     if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
 
-    const exist = await pool.query(`SELECT id FROM users WHERE username = $1`, [username]);
+    const exist = await pool.query(`SELECT id FROM users_ws WHERE username = $1`, [username]);
     if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
 
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      `INSERT INTO users (username, password, gender, phone, email, avatar, level, exp)
+      `INSERT INTO users_ws (username, password, gender, phone, email, avatar, level, exp)
        VALUES ($1, $2, $3, $4, $5, $6, 1, 0)
        RETURNING id, username, gender, avatar, level, exp`,
       [username, hash, gender === "男" ? "男" : "女", phone || null, email || null, avatar || null]
@@ -68,7 +68,7 @@ authRouter.post("/login", async (req, res) => {
 
     const result = await pool.query(
       `SELECT id, username, password, level, exp, avatar, gender, is_online, login_token
-       FROM users WHERE username=$1`,
+       FROM users_ws WHERE username=$1`,
       [username]
     );
 
@@ -96,14 +96,14 @@ authRouter.post("/login", async (req, res) => {
 
       // 資料庫也把舊 token 清掉
       await pool.query(
-        `UPDATE users SET is_online=false, login_token=NULL WHERE id=$1`,
+        `UPDATE users_ws SET is_online=false, login_token=NULL WHERE id=$1`,
         [user.id]
       );
     }
 
     // --- 2️⃣ 更新新登入 ---
     await pool.query(
-      `UPDATE users
+      `UPDATE users_ws
        SET last_login=$1, login_token=$2, is_online=true
        WHERE id=$3`,
       [now, token, user.id]
@@ -134,7 +134,7 @@ authRouter.post("/logout", async (req, res) => {
   const { token } = req.body;
 
   await pool.query(
-    `UPDATE users
+    `UPDATE users_ws
      SET is_online=false,
          login_token=NULL
      WHERE login_token=$1`,
