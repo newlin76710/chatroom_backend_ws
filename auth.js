@@ -2,7 +2,6 @@ import express from "express";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { pool } from "./db.js";
-import { v4 as uuidv4 } from "uuid";
 
 export const authRouter = express.Router();
 export const ioTokens = new Map();
@@ -27,7 +26,7 @@ authRouter.post("/guest", async (req, res) => {
   }
 
   // 建立訪客資料（或生成 token）
-  const guestToken = uuidv4();
+  const guestToken = crypto.randomUUID();
   await pool.query(
     `INSERT INTO users_ws (username, gender, login_token, account_type) VALUES ($1, $2, $3, 'guest')`,
     [guestName, gender, guestToken]
