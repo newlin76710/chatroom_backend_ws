@@ -7,32 +7,40 @@ export const authRouter = express.Router();
 export const ioTokens = new Map();
 // 訪客登入
 authRouter.post("/guest", async (req, res) => {
-  const { gender, username } = req.body;
+  try {
+    const { gender, username } = req.body;
+    const safeGender = gender === "男" ? "男" : "女";
 
-  let guestName = "";
-  if (username?.trim()) {
-    // 有輸入暱稱 → 變成 "訪客_暱稱"
-    guestName = "訪客_" + username.trim();
-  } else {
-    // 沒輸入暱稱 → 自動生成
-    guestName = "訪客" + Math.floor(Math.random() * 9999);
+    // 使用者輸入暱稱就用訪客_暱稱，否則隨機
+    let guestName = username?.trim() ? `訪客_${username.trim()}` : "訪客" + Math.floor(Math.random() * 10000);
+
+    const now = new Date();
+    const guestToken = crypto.randomUUID();
+    const randomPassword = crypto.randomBytes(8).toString("hex"); 
+    const level = 1;
+    const exp = 0;
+
+    const result = await pool.query(
+      `INSERT INTO users (username, password, gender, last_login, account_type, level, exp)
+       VALUES ($1, $2, $3, $4, 'guest', $5, $6)
+       ON CONFLICT (username) 
+       DO UPDATE SET
+         password = EXCLUDED.password,
+         gender = EXCLUDED.gender,
+         last_login = EXCLUDED.last_login,
+         account_type = 'guest',
+         level = EXCLUDED.level,
+         exp = EXCLUDED.exp
+       RETURNING id, username, gender, level, exp`,
+      [guestName, randomPassword, safeGender, now, level, exp]
+    );
+
+    const guest = result.rows[0];
+    res.json({ guestToken, name: guest.username, gender: guest.gender, level: guest.level, exp: guest.exp, last_login: now });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "訪客登入失敗" });
   }
-
-  // 防止重複
-  const existing = await pool.query(`SELECT 1 FROM users_ws WHERE username=$1`, [guestName]);
-  if (existing.rows.length) {
-    // 加個隨機數字避免重複
-    guestName += Math.floor(Math.random() * 9999);
-  }
-
-  // 建立訪客資料（或生成 token）
-  const guestToken = crypto.randomUUID();
-  await pool.query(
-    `INSERT INTO users_ws (username, gender, login_token, account_type) VALUES ($1, $2, $3, 'guest')`,
-    [guestName, gender, guestToken]
-  );
-
-  res.json({ guestToken, name: guestName, gender, last_login: new Date().toISOString() });
 });
 
 // 註冊
