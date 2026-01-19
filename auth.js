@@ -14,7 +14,14 @@ authRouter.post("/guest", async (req, res) => {
     // 使用者輸入暱稱就用訪客_暱稱，否則隨機生成
     const baseName = username?.trim() ? `訪客_${username.trim()}` : "訪客" + Math.floor(Math.random() * 10000);
     let guestName = baseName;
+    const accountExists = await pool.query(
+      `SELECT 1 FROM users_ws WHERE username = $1 AND account_type = 'account'`,
+      [guestName]
+    );
 
+    if (accountExists.rows.length) {
+      return res.status(400).json({ error: "此暱稱為正式帳號使用中" });
+    }
     // 檢查暱稱是否有人在線上
     const existsOnline = await pool.query(
       `SELECT 1 FROM users_ws WHERE username=$1 AND is_online=true`,
@@ -27,7 +34,7 @@ authRouter.post("/guest", async (req, res) => {
     // 如果暱稱存在但離線，就覆寫登入資訊
     const now = new Date();
     const guestToken = crypto.randomUUID();
-    const randomPassword = crypto.randomBytes(8).toString("hex"); 
+    const randomPassword = crypto.randomBytes(8).toString("hex");
     const level = 1;
     const exp = 0;
 
