@@ -28,7 +28,7 @@ authRouter.post("/guest", async (req, res) => {
   // 建立訪客資料（或生成 token）
   const guestToken = Math.random().toString(36).substr(2, 12);
   await pool.query(
-    `INSERT INTO users_ws (username, gender, token, account_type) VALUES ($1, $2, $3, 'guest')`,
+    `INSERT INTO users_ws (username, gender, login_token, account_type) VALUES ($1, $2, $3, 'guest')`,
     [guestName, gender, guestToken]
   );
 
