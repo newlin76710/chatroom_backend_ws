@@ -161,7 +161,7 @@ authRouter.post("/logout", async (req, res) => {
     if (!username) return res.status(400).json({ error: "缺少 username" });
 
     await pool.query(
-      `UPDATE users
+      `UPDATE users_ws
        SET is_online=false, login_token=NULL
        WHERE username=$1`,
       [username]
