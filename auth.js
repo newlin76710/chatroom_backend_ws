@@ -7,30 +7,32 @@ export const authRouter = express.Router();
 export const ioTokens = new Map();
 // 訪客登入
 authRouter.post("/guest", async (req, res) => {
-  try {
-    const { gender } = req.body;
-    const safeGender = gender === "男" ? "男" : "女";
+  const { gender, username } = req.body;
 
-    const guestName = "訪客" + Math.floor(Math.random() * 10000);
-    const now = new Date();
-    const guestToken = crypto.randomUUID();
-    const randomPassword = crypto.randomBytes(8).toString("hex"); 
-    const level = 1;
-    const exp = 0;
-
-    const result = await pool.query(
-      `INSERT INTO users_ws (username, password, gender, last_login, account_type, level, exp)
-       VALUES ($1, $2, $3, $4, 'guest', $5, $6)
-       RETURNING id, username, gender, level, exp`,
-      [guestName, randomPassword, safeGender, now, level, exp]
-    );
-
-    const guest = result.rows[0];
-    res.json({ guestToken, name: guest.username, gender: guest.gender, level: guest.level, exp: guest.exp, last_login: now });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "訪客登入失敗" });
+  let guestName = "";
+  if (username?.trim()) {
+    // 有輸入暱稱 → 變成 "訪客_暱稱"
+    guestName = "訪客_" + username.trim();
+  } else {
+    // 沒輸入暱稱 → 自動生成
+    guestName = "訪客" + Math.floor(Math.random() * 9999);
   }
+
+  // 防止重複
+  const existing = await pool.query(`SELECT 1 FROM users_ws WHERE username=$1`, [guestName]);
+  if (existing.rows.length) {
+    // 加個隨機數字避免重複
+    guestName += Math.floor(Math.random() * 9999);
+  }
+
+  // 建立訪客資料（或生成 token）
+  const guestToken = Math.random().toString(36).substr(2, 12);
+  await pool.query(
+    `INSERT INTO users_ws (username, gender, token, account_type) VALUES ($1, $2, $3, 'guest')`,
+    [guestName, gender, guestToken]
+  );
+
+  res.json({ guestToken, name: guestName, gender, last_login: new Date().toISOString() });
 });
 
 // 註冊
