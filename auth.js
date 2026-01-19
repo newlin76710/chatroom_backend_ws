@@ -32,14 +32,14 @@ authRouter.post("/guest", async (req, res) => {
     const exp = 0;
 
     const result = await pool.query(
-      `INSERT INTO users_ws (username, password, gender, last_login, account_type, level, exp, is_online)
-       VALUES ($1, $2, $3, $4, 'guest', $5, $6, true)
+      `INSERT INTO users_ws (username, password, gender, last_login, account_type, level, exp, is_online, login_token)
+       VALUES ($1, $2, $3, $4, 'guest', $5, $6, true, $7)
        ON CONFLICT (username)
        DO UPDATE SET
          last_login = EXCLUDED.last_login,
          is_online = true
        RETURNING id, username, gender, level, exp`,
-      [guestName, randomPassword, safeGender, now, level, exp]
+      [guestName, randomPassword, safeGender, now, level, exp, guestToken]
     );
 
     const guest = result.rows[0];
