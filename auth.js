@@ -5,15 +5,26 @@ import { pool } from "./db.js";
 
 export const authRouter = express.Router();
 export const ioTokens = new Map();
-// 訪客登入
+// ===== 訪客登入 =====
 authRouter.post("/guest", async (req, res) => {
   try {
     const { gender, username } = req.body;
     const safeGender = gender === "男" ? "男" : "女";
 
-    // 使用者輸入暱稱就用訪客_暱稱，否則隨機
-    let guestName = username?.trim() ? `訪客_${username.trim()}` : "訪客" + Math.floor(Math.random() * 10000);
+    // 使用者輸入暱稱就用訪客_暱稱，否則隨機生成
+    const baseName = username?.trim() ? `訪客_${username.trim()}` : "訪客" + Math.floor(Math.random() * 10000);
+    let guestName = baseName;
 
+    // 檢查暱稱是否有人在線上
+    const existsOnline = await pool.query(
+      `SELECT 1 FROM users_ws WHERE username=$1 AND is_online=true`,
+      [guestName]
+    );
+    if (existsOnline.rows.length) {
+      return res.status(400).json({ error: "暱稱已有人使用，請更換暱稱" });
+    }
+
+    // 如果暱稱存在但離線，就覆寫登入資訊
     const now = new Date();
     const guestToken = crypto.randomUUID();
     const randomPassword = crypto.randomBytes(8).toString("hex"); 
@@ -21,24 +32,28 @@ authRouter.post("/guest", async (req, res) => {
     const exp = 0;
 
     const result = await pool.query(
-      `INSERT INTO users (username, password, gender, last_login, account_type, level, exp)
-       VALUES ($1, $2, $3, $4, 'guest', $5, $6)
-       ON CONFLICT (username) 
+      `INSERT INTO users_ws (username, password, gender, last_login, account_type, level, exp, is_online)
+       VALUES ($1, $2, $3, $4, 'guest', $5, $6, true)
+       ON CONFLICT (username)
        DO UPDATE SET
-         password = EXCLUDED.password,
-         gender = EXCLUDED.gender,
          last_login = EXCLUDED.last_login,
-         account_type = 'guest',
-         level = EXCLUDED.level,
-         exp = EXCLUDED.exp
+         is_online = true
        RETURNING id, username, gender, level, exp`,
       [guestName, randomPassword, safeGender, now, level, exp]
     );
 
     const guest = result.rows[0];
-    res.json({ guestToken, name: guest.username, gender: guest.gender, level: guest.level, exp: guest.exp, last_login: now });
+    res.json({
+      guestToken,
+      name: guest.username,
+      gender: guest.gender,
+      level: guest.level,
+      exp: guest.exp,
+      last_login: now.toISOString()
+    });
+
   } catch (err) {
-    console.error(err);
+    console.error("訪客登入失敗：", err);
     res.status(500).json({ error: "訪客登入失敗" });
   }
 });
@@ -67,7 +82,6 @@ authRouter.post("/register", async (req, res) => {
   }
 });
 
-// 登入
 // 登入
 authRouter.post("/login", async (req, res) => {
   try {
@@ -140,16 +154,22 @@ authRouter.post("/login", async (req, res) => {
   }
 });
 
+// POST /auth/logout
 authRouter.post("/logout", async (req, res) => {
-  const { token } = req.body;
+  try {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ error: "缺少 username" });
 
-  await pool.query(
-    `UPDATE users_ws
-     SET is_online=false,
-         login_token=NULL
-     WHERE login_token=$1`,
-    [token]
-  );
+    await pool.query(
+      `UPDATE users
+       SET is_online=false, login_token=NULL
+       WHERE username=$1`,
+      [username]
+    );
 
-  res.json({ message: "已登出" });
+    res.json({ success: true, message: `${username} 已登出` });
+  } catch (err) {
+    console.error("登出失敗：", err);
+    res.status(500).json({ error: "登出失敗" });
+  }
 });
