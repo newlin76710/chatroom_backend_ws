@@ -103,12 +103,12 @@ export function chatHandlers(io, socket) {
     });
 
     // --- 聊天訊息 ---
-    socket.on("message", async ({ room, message, user, target, mode }) => {
+    socket.on("message", async ({ room, message, user, target, mode, color }) => {
         if (!roomContext[room]) roomContext[room] = [];
         roomContext[room].push({ user: user.name, text: message });
         if (roomContext[room].length > 20) roomContext[room].shift();
 
-        const msgPayload = { user, message, target: target || "", mode };
+        const msgPayload = { user, message, target: target || "", mode, color };
 
         // 更新 EXP / LV
         try {
@@ -145,7 +145,7 @@ export function chatHandlers(io, socket) {
         // AI 回覆
         if (target && aiProfiles[target]) {
             const reply = await callAI(message, target);
-            const aiMsg = { user: { name: target }, message: reply, target: user.name, mode };
+            const aiMsg = { user: { name: target }, message: reply, target: user.name, mode, color: "#ff99aa" };
             if (mode === "private") {
                 const sockets = Array.from(io.sockets.sockets.values());
                 sockets.forEach(s => { if (s.data.name === target || s.data.name === user.name) s.emit("message", aiMsg); });
