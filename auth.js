@@ -16,7 +16,7 @@ authRouter.post("/guest", async (req, res) => {
     let guestName = baseName;
     const accountExists = await pool.query(
       `SELECT 1 FROM users_ws WHERE username = $1 AND account_type = 'account'`,
-      [guestName]
+      [username]
     );
 
     if (accountExists.rows.length) {
