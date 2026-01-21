@@ -9,6 +9,7 @@ import fs from "fs";
 import fetch from "node-fetch"; // Node 18+ 可直接用 fetch
 
 import { pool } from "./db.js";
+import { adminRouter } from "./admin.js";
 import { authRouter } from "./auth.js";
 import { aiRouter } from "./ai.js";
 import { songRouter } from "./song.js";
@@ -44,6 +45,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/songs", express.static(uploadDir));
 
 // ===== Routes =====
+app.use("/admin", adminRouter);
 app.use("/auth", authRouter);
 app.use("/ai", aiRouter);
 app.use("/song", songRouter);
