@@ -8,7 +8,6 @@ export const authRouter = express.Router();
 export const ioTokens = new Map();
 
 /* ================= 工具 ================= */
-
 function getClientIP(req) {
   return (
     req.headers["cf-connecting-ip"] ||
@@ -17,87 +16,68 @@ function getClientIP(req) {
   );
 }
 
-/* ================= 訪客登入 ================= */
+/* ================= 驗證 Middleware ================= */
+export const authMiddleware = async (req, res, next) => {
+  try {
+    const token = req.headers["authorization"]?.split(" ")[1] || req.body.token;
+    if (!token) return res.status(401).json({ error: "No token provided" });
 
+    const result = await pool.query(
+      `SELECT id, username, level, exp, gender, avatar, account_type 
+       FROM users_ws WHERE login_token=$1`,
+      [token]
+    );
+
+    if (!result.rowCount) return res.status(401).json({ error: "Invalid token" });
+
+    req.user = result.rows[0];
+    next();
+  } catch (err) {
+    console.error("authMiddleware error:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+/* ================= 訪客登入 ================= */
 authRouter.post("/guest", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
-
   try {
     const { gender, username } = req.body;
     const safeGender = gender === "男" ? "男" : "女";
-
-    const baseName = username?.trim()
-      ? `訪客_${username.trim()}`
-      : "訪客" + Math.floor(Math.random() * 10000);
-
+    const baseName = username?.trim() ? `訪客_${username.trim()}` : "訪客" + Math.floor(Math.random() * 10000);
     let guestName = baseName;
 
-    // ❌ 不可與正式帳號重名
     const accountExists = await pool.query(
-      `SELECT 1 FROM users_ws WHERE username = $1 AND account_type = 'account'`,
+      `SELECT 1 FROM users_ws WHERE username=$1 AND account_type='account'`,
       [username]
     );
+    if (accountExists.rows.length) return res.status(400).json({ error: "暱稱已有人使用" });
 
-    if (accountExists.rows.length) {
-      await logLogin({
-        username,
-        loginType: "guest",
-        ip,
-        userAgent,
-        success: false,
-        failReason: "nickname_conflict_with_account",
-      });
-      return res.status(400).json({ error: "此暱稱為正式帳號使用中" });
-    }
-
-    // ❌ 線上重名
     const existsOnline = await pool.query(
       `SELECT 1 FROM users_ws WHERE username=$1 AND is_online=true`,
       [guestName]
     );
-
-    if (existsOnline.rows.length) {
-      await logLogin({
-        username: guestName,
-        loginType: "guest",
-        ip,
-        userAgent,
-        success: false,
-        failReason: "nickname_already_online",
-      });
-      return res.status(400).json({ error: "暱稱已有人使用，請更換暱稱" });
-    }
+    if (existsOnline.rows.length) return res.status(400).json({ error: "暱稱已有人使用" });
 
     const now = new Date();
     const guestToken = crypto.randomUUID();
     const randomPassword = crypto.randomBytes(8).toString("hex");
 
     const result = await pool.query(
-      `
-      INSERT INTO users_ws
-      (username, password, gender, last_login, account_type, level, exp, is_online, login_token)
-      VALUES ($1, $2, $3, $4, 'guest', 1, 0, true, $5)
-      ON CONFLICT (username)
-      DO UPDATE SET
-        last_login = EXCLUDED.last_login,
-        is_online = true,
-        login_token = EXCLUDED.login_token
-      RETURNING id, username, gender, level, exp
-      `,
+      `INSERT INTO users_ws
+       (username, password, gender, last_login, account_type, level, exp, is_online, login_token)
+       VALUES ($1,$2,$3,$4,'guest',1,0,true,$5)
+       ON CONFLICT (username) DO UPDATE SET
+         last_login=EXCLUDED.last_login,
+         is_online=true,
+         login_token=EXCLUDED.login_token
+       RETURNING id, username, gender, level, exp`,
       [guestName, randomPassword, safeGender, now, guestToken]
     );
 
     const guest = result.rows[0];
-
-    await logLogin({
-      userId: guest.id,
-      username: guest.username,
-      loginType: "guest",
-      ip,
-      userAgent,
-      success: true,
-    });
+    await logLogin({ userId: guest.id, username: guest.username, loginType: "guest", ip, userAgent, success: true });
 
     res.json({
       guestToken,
@@ -113,179 +93,64 @@ authRouter.post("/guest", async (req, res) => {
   }
 });
 
-/* ================= 註冊 ================= */
-
-authRouter.post("/register", async (req, res) => {
-  try {
-    const { username, password, gender, phone, email, avatar } = req.body;
-    if (!username || !password)
-      return res.status(400).json({ error: "缺少帳號或密碼" });
-
-    const exist = await pool.query(
-      `SELECT id FROM users_ws WHERE username=$1`,
-      [username]
-    );
-    if (exist.rowCount)
-      return res.status(400).json({ error: "帳號已存在" });
-
-    const hash = await bcrypt.hash(password, 10);
-
-    const result = await pool.query(
-      `
-      INSERT INTO users_ws
-      (username, password, gender, phone, email, avatar, level, exp)
-      VALUES ($1, $2, $3, $4, $5, $6, 1, 0)
-      RETURNING id, username, gender, avatar, level, exp
-      `,
-      [
-        username,
-        hash,
-        gender === "男" ? "男" : "女",
-        phone || null,
-        email || null,
-        avatar || null,
-      ]
-    );
-
-    res.json({ message: "註冊成功", user: result.rows[0] });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "註冊失敗" });
-  }
-});
-
 /* ================= 正式登入 ================= */
-
 authRouter.post("/login", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
-
   try {
     const { username, password } = req.body;
-    if (!username || !password)
-      return res.status(400).json({ error: "缺少帳號或密碼" });
+    if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
 
     const result = await pool.query(
-      `
-      SELECT id, username, password, level, exp, avatar, gender, is_online, login_token
-      FROM users_ws WHERE username=$1
-      `,
+      `SELECT id, username, password, level, exp, avatar, gender, is_online, login_token
+       FROM users_ws WHERE username=$1`,
       [username]
     );
-
-    if (!result.rowCount) {
-      await logLogin({
-        username,
-        loginType: "normal",
-        ip,
-        userAgent,
-        success: false,
-        failReason: "user_not_found",
-      });
-      return res.status(400).json({ error: "帳號不存在" });
-    }
+    if (!result.rowCount) return res.status(400).json({ error: "帳號不存在" });
 
     const user = result.rows[0];
     const match = await bcrypt.compare(password, user.password);
-
-    if (!match) {
-      await logLogin({
-        userId: user.id,
-        username,
-        loginType: "normal",
-        ip,
-        userAgent,
-        success: false,
-        failReason: "wrong_password",
-      });
-      return res.status(400).json({ error: "密碼錯誤" });
-    }
+    if (!match) return res.status(400).json({ error: "密碼錯誤" });
 
     const now = new Date();
     const token = crypto.randomUUID();
 
-    // 踢掉舊登入
     if (user.is_online && user.login_token) {
       const oldToken = user.login_token;
       if (ioTokens.has(oldToken)) {
         const socketId = ioTokens.get(oldToken);
         const socket = req.app.get("io").sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit("forceLogout", { reason: "你的帳號在其他地方登入" });
-          socket.disconnect(true);
-        }
+        if (socket) socket.emit("forceLogout", { reason: "你的帳號在其他地方登入" });
         ioTokens.delete(oldToken);
       }
-      await pool.query(
-        `UPDATE users_ws SET is_online=false, login_token=NULL WHERE id=$1`,
-        [user.id]
-      );
+      await pool.query(`UPDATE users_ws SET is_online=false, login_token=NULL WHERE id=$1`, [user.id]);
     }
 
-    await pool.query(
-      `
-      UPDATE users_ws
-      SET last_login=$1, login_token=$2, is_online=true
-      WHERE id=$3
-      `,
-      [now, token, user.id]
-    );
+    await pool.query(`UPDATE users_ws SET last_login=$1, login_token=$2, is_online=true WHERE id=$3`, [now, token, user.id]);
 
-    await logLogin({
-      userId: user.id,
-      username: user.username,
-      loginType: "normal",
-      ip,
-      userAgent,
-      success: true,
-    });
+    await logLogin({ userId: user.id, username: user.username, loginType: "normal", ip, userAgent, success: true });
 
-    res.json({
-      token,
-      name: user.username,
-      level: user.level,
-      exp: user.exp,
-      gender: user.gender,
-      avatar: user.avatar,
-      last_login: now,
-    });
-  } catch (e) {
-    console.error(e);
+    res.json({ token, name: user.username, level: user.level, exp: user.exp, gender: user.gender, avatar: user.avatar, last_login: now });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "登入失敗" });
   }
 });
 
 /* ================= 登出 ================= */
-
 authRouter.post("/logout", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
-
   try {
     const { username } = req.body;
-    if (!username)
-      return res.status(400).json({ error: "缺少 username" });
+    if (!username) return res.status(400).json({ error: "缺少 username" });
 
-    await pool.query(
-      `
-      UPDATE users_ws
-      SET is_online=false, login_token=NULL
-      WHERE username=$1
-      `,
-      [username]
-    );
-
-    await logLogin({
-      username,
-      loginType: "logout",
-      ip,
-      userAgent,
-      success: true,
-    });
+    await pool.query(`UPDATE users_ws SET is_online=false, login_token=NULL WHERE username=$1`, [username]);
+    await logLogin({ username, loginType: "logout", ip, userAgent, success: true });
 
     res.json({ success: true, message: `${username} 已登出` });
   } catch (err) {
-    console.error("登出失敗：", err);
+    console.error(err);
     res.status(500).json({ error: "登出失敗" });
   }
 });

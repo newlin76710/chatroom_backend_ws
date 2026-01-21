@@ -1,71 +1,42 @@
-// admin.js
 import express from "express";
-import { pool } from "./db.js"; // 你的 PostgreSQL 連線
-import { authMiddleware } from "./auth.js"; // 驗證 token 並填 req.user
+import { authMiddleware } from "./auth.js";
+import { pool } from "./db.js";
 
 export const adminRouter = express.Router();
 
-// 設定最低等級可以看登入紀錄
-const MIN_LEVEL_VIEW_LOGIN_LOG = 99;
-
-// 取得登入紀錄（支援分頁）
-adminRouter.get("/login-logs", authMiddleware, async (req, res) => {
+/* ================= 登入紀錄 API (支援分頁) ================= */
+adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
   try {
-    // 權限檢查
-    if (!req.user || req.user.level < MIN_LEVEL_VIEW_LOGIN_LOG) {
+    const { username, page = 1, pageSize = 20 } = req.body;
+
+    // 只有等級達門檻可查看
+    if (!req.user || req.user.level < 99)
       return res.status(403).json({ error: "權限不足" });
-    }
 
-    // 解析 query
-    const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-    const offset = (page - 1) * limit;
+    const offset = (page - 1) * pageSize;
 
-    // 先查總數
-    const totalResult = await pool.query(`SELECT COUNT(*) FROM login_logs`);
-    const total = parseInt(totalResult.rows[0].count, 10);
-
-    // 查資料
-    const result = await pool.query(
-      `
-      SELECT username, ip, success, created_at
-      FROM login_logs
-      ORDER BY created_at DESC
-      LIMIT $1 OFFSET $2
-      `,
-      [limit, offset]
+    const logs = await pool.query(
+      `SELECT * FROM login_logs 
+       ORDER BY login_at DESC 
+       LIMIT $1 OFFSET $2`,
+      [pageSize, offset]
     );
 
     res.json({
       page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-      data: result.rows,
+      pageSize,
+      logs: logs.rows.map(l => ({
+        id: l.id,
+        username: l.username,
+        login_type: l.login_type,
+        ip_address: l.ip_address,
+        success: l.success,
+        fail_reason: l.fail_reason,
+        login_at: l.login_at,
+      })),
     });
   } catch (err) {
-    console.error("取得登入紀錄失敗", err);
-    res.status(500).json({ error: "伺服器錯誤" });
-  }
-});
-
-// 後端紀錄登入 API 範例（可在登入成功/失敗時呼叫）
-adminRouter.post("/login-log", async (req, res) => {
-  try {
-    const { username, ip, success } = req.body;
-
-    if (!username || !ip || typeof success !== "boolean") {
-      return res.status(400).json({ error: "參數錯誤" });
-    }
-
-    await pool.query(
-      `INSERT INTO login_logs (username, ip, success, created_at) VALUES ($1, $2, $3, NOW())`,
-      [username, ip, success]
-    );
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.error("紀錄登入失敗", err);
-    res.status(500).json({ error: "伺服器錯誤" });
+    console.error("查詢登入紀錄失敗", err);
+    res.status(500).json({ error: "查詢失敗" });
   }
 });
