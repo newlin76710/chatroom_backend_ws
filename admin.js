@@ -126,7 +126,7 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
         room,
         username,
         role,
-        message AS content,   -- 方便前端 l.content
+        message,
         message_type,
         mode,
         target,
