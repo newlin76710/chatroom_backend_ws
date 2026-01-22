@@ -23,6 +23,39 @@ function getRoomState(room) {
     return songState[room];
 }
 
+async function logMessage({
+    room,
+    username,
+    role,
+    message,
+    mode = "public",
+    target = null,
+    message_type = "text",
+    socket
+}) {
+    try {
+        await pool.query(
+            `
+            INSERT INTO message_logs
+            (room, username, role, message, message_type, mode, target, ip)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+            `,
+            [
+                room,
+                username,
+                role,
+                message,
+                message_type,
+                mode,
+                target,
+                socket?.handshake?.address || null
+            ]
+        );
+    } catch (err) {
+        console.error("❌ 發言紀錄寫入失敗：", err);
+    }
+}
+
 // Socket.io 聊天邏輯
 export function chatHandlers(io, socket) {
 
@@ -141,7 +174,16 @@ export function chatHandlers(io, socket) {
                 if (s.data.name === target || s.data.name === user.name) s.emit("message", msgPayload);
             });
         } else io.to(room).emit("message", msgPayload);
-
+        // ⭐ 寫入 DB（使用者）
+        await logMessage({
+            room,
+            username: user.name,
+            role: socket.data?.type || "guest",
+            message,
+            mode,
+            target,
+            socket
+        });
         // AI 回覆
         if (target && aiProfiles[target]) {
             const reply = await callAI(message, target);
@@ -150,7 +192,17 @@ export function chatHandlers(io, socket) {
                 const sockets = Array.from(io.sockets.sockets.values());
                 sockets.forEach(s => { if (s.data.name === target || s.data.name === user.name) s.emit("message", aiMsg); });
             } else io.to(room).emit("message", aiMsg);
-
+            // ⭐ 寫入 AI 發言紀錄
+            await logMessage({
+                room,
+                username: target,
+                role: "AI",
+                message: reply,
+                mode,
+                target: user.name,
+                message_type: "ai",
+                socket
+            });
             roomContext[room].push({ user: target, text: reply });
             if (roomContext[room].length > 20) roomContext[room].shift();
         }
