@@ -131,7 +131,7 @@ export function chatHandlers(io, socket) {
         if (roomContext[room].length > 20) roomContext[room].shift();
 
         // ⭐ 加上 ip
-        const ip = socket.data?.ip || socket.handshake?.address || null;
+        const ip = getClientIP(socket);
         const msgPayload = { user, message, target: target || "", mode, color, ip };
 
         // 更新 EXP / LV
