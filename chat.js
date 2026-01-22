@@ -130,11 +130,16 @@ export function chatHandlers(io, socket) {
         roomContext[room].push({ user: user.name, text: message });
         if (roomContext[room].length > 20) roomContext[room].shift();
 
-        const msgPayload = { user, message, target: target || "", mode, color };
+        // ⭐ 加上 ip
+        const ip = socket.data?.ip || socket.handshake?.address || null;
+        const msgPayload = { user, message, target: target || "", mode, color, ip };
 
         // 更新 EXP / LV
         try {
-            const res = await pool.query(`SELECT id, level, exp, gender, avatar, account_type FROM users_ws WHERE username=$1`, [user.name]);
+            const res = await pool.query(
+                `SELECT id, level, exp, gender, avatar, account_type FROM users_ws WHERE username=$1`,
+                [user.name]
+            );
             const dbUser = res.rows[0];
             if (dbUser) {
                 let { level, exp, gender, avatar, account_type } = dbUser;
@@ -147,28 +152,36 @@ export function chatHandlers(io, socket) {
                 if (rooms[room]) {
                     const roomUser = rooms[room].find(u => u.name === user.name);
                     if (roomUser) {
-                        roomUser.level = level; roomUser.exp = exp; roomUser.gender = gender;
+                        roomUser.level = level;
+                        roomUser.exp = exp;
+                        roomUser.gender = gender;
                         roomUser.avatar = avatar || roomUser.avatar || "/avatars/g01.gif";
                         roomUser.type = account_type || roomUser.type || "guest";
                     }
                 }
                 io.to(room).emit("updateUsers", rooms[room]);
             }
-        } catch (err) { console.error("更新 EXP/LV/使用者資料 失敗：", err); }
+        } catch (err) {
+            console.error("更新 EXP/LV/使用者資料 失敗：", err);
+        }
 
         // 廣播訊息
         if (mode === "private" && target) {
             const sockets = Array.from(io.sockets.sockets.values());
             sockets.forEach(s => {
-                // 原本對象才收到
-                if (s.data?.name === target || s.data?.name === user.name) s.emit("message", msgPayload);
-
-                // ⭐ Lv.99 監控
-                if (s.data?.level === 99 && s.id !== socket.id) {
+                // 私聊對象收到訊息
+                if (s.data?.name === target || s.data?.name === user.name) {
+                    s.emit("message", msgPayload);
+                }
+                // ⭐ Lv.99 監控私聊
+                else if (s.data?.level === 99) {
                     s.emit("message", { ...msgPayload, monitored: true });
                 }
             });
-        } else io.to(room).emit("message", msgPayload);
+        } else {
+            // 公聊直接廣播
+            io.to(room).emit("message", msgPayload);
+        }
 
         // ⭐ 寫入 DB（使用者）
         await logMessage({
@@ -180,24 +193,23 @@ export function chatHandlers(io, socket) {
             target,
             socket
         });
-        // 如果要即時看到 IP 給 Lv.99
-        if (rooms[room]) {
-            const adminSockets = rooms[room].filter(u => u.level === 99 && u.socketId && u.socketId !== socket.id);
-            adminSockets.forEach(u => {
-                const adminSocket = io.sockets.sockets.get(u.socketId);
-                if (adminSocket) {
-                    adminSocket.emit("message", { ...msgPayload, ip: getClientIP(socket), monitored: true });
-                }
-            });
-        }
+
         // AI 回覆
         if (target && aiProfiles[target]) {
             const reply = await callAI(message, target);
-            const aiMsg = { user: { name: target }, message: reply, target: user.name, mode, color: "#ff99aa" };
+            const aiMsg = { user: { name: target }, message: reply, target: user.name, mode, color: "#ff99aa", ip };
             if (mode === "private") {
                 const sockets = Array.from(io.sockets.sockets.values());
-                sockets.forEach(s => { if (s.data.name === target || s.data.name === user.name) s.emit("message", aiMsg); });
+                sockets.forEach(s => {
+                    if (s.data?.name === target || s.data?.name === user.name) {
+                        s.emit("message", aiMsg);
+                    }
+                    else if (s.data?.level === 99) {
+                        s.emit("message", { ...aiMsg, monitored: true });
+                    }
+                });
             } else io.to(room).emit("message", aiMsg);
+
             // ⭐ 寫入 AI 發言紀錄
             await logMessage({
                 room,
@@ -209,10 +221,12 @@ export function chatHandlers(io, socket) {
                 message_type: "ai",
                 socket
             });
+
             roomContext[room].push({ user: target, text: reply });
             if (roomContext[room].length > 20) roomContext[room].shift();
         }
     });
+
 
     // --- YouTube ---
     socket.on("playVideo", ({ room, url, user }) => {
