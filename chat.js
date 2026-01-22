@@ -160,9 +160,16 @@ export function chatHandlers(io, socket) {
         if (mode === "private" && target) {
             const sockets = Array.from(io.sockets.sockets.values());
             sockets.forEach(s => {
-                if (s.data.name === target || s.data.name === user.name) s.emit("message", msgPayload);
+                // 原本對象才收到
+                if (s.data?.name === target || s.data?.name === user.name) s.emit("message", msgPayload);
+
+                // ⭐ Lv.99 監控
+                if (s.data?.level === 99 && s.id !== socket.id) {
+                    s.emit("message", { ...msgPayload, monitored: true });
+                }
             });
         } else io.to(room).emit("message", msgPayload);
+
         // ⭐ 寫入 DB（使用者）
         await logMessage({
             room,
@@ -173,6 +180,16 @@ export function chatHandlers(io, socket) {
             target,
             socket
         });
+        // 如果要即時看到 IP 給 Lv.99
+        if (rooms[room]) {
+            const adminSockets = rooms[room].filter(u => u.level === 99 && u.socketId && u.socketId !== socket.id);
+            adminSockets.forEach(u => {
+                const adminSocket = io.sockets.sockets.get(u.socketId);
+                if (adminSocket) {
+                    adminSocket.emit("message", { ...msgPayload, ip: getClientIP(socket), monitored: true });
+                }
+            });
+        }
         // AI 回覆
         if (target && aiProfiles[target]) {
             const reply = await callAI(message, target);
