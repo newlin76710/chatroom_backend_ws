@@ -93,6 +93,30 @@ authRouter.post("/guest", async (req, res) => {
   }
 });
 
+// 註冊
+authRouter.post("/register", async (req, res) => {
+  try {
+    const { username, password, gender, phone, email, avatar } = req.body;
+    if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
+
+    const exist = await pool.query(`SELECT id FROM users WHERE username = $1`, [username]);
+    if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
+
+    const hash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      `INSERT INTO users_ws (username, password, gender, phone, email, avatar, level, exp)
+       VALUES ($1, $2, $3, $4, $5, $6, 1, 0)
+       RETURNING id, username, gender, avatar, level, exp`,
+      [username, hash, gender === "男" ? "男" : "女", phone || null, email || null, avatar || null]
+    );
+
+    res.json({ message: "註冊成功", user: result.rows[0] });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "註冊失敗" });
+  }
+});
+
 /* ================= 正式登入 ================= */
 authRouter.post("/login", async (req, res) => {
   const ip = getClientIP(req);
