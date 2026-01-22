@@ -9,6 +9,15 @@ export const aiTimers = {};
 export const videoState = {};
 export const displayQueue = {};
 
+/* ================= 工具 ================= */
+function getClientIP(socket) {
+    return socket?.handshake?.headers
+        ? socket.handshake.headers["x-forwarded-for"]?.split(",")[0]
+        || socket.handshake.headers["cf-connecting-ip"]
+        || socket.handshake.address
+        : socket?.handshake?.address;
+}
+
 function getRoomState(room) {
     if (!songState[room]) {
         songState[room] = {
@@ -23,39 +32,19 @@ function getRoomState(room) {
     return songState[room];
 }
 
-async function logMessage({
-    room,
-    username,
-    role,
-    message,
-    mode = "public",
-    target = null,
-    message_type = "text",
-    socket
-}) {
+async function logMessage({ room, username, role, message, mode = "public", target = '', message_type = "text", socket }) {
     try {
+        const ip = getClientIP(socket);
         await pool.query(
-            `
-            INSERT INTO message_logs
-            (room, username, role, message, message_type, mode, target, ip)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-            `,
-            [
-                room,
-                username,
-                role,
-                message,
-                message_type,
-                mode,
-                target,
-                socket?.handshake?.address || null
-            ]
+            `INSERT INTO message_logs
+       (room, username, role, message, message_type, mode, target, ip)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [room, username, role, message, message_type, mode, target, ip || null]
         );
     } catch (err) {
         console.error("❌ 發言紀錄寫入失敗：", err);
     }
 }
-
 // Socket.io 聊天邏輯
 export function chatHandlers(io, socket) {
 
