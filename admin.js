@@ -50,7 +50,8 @@ adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
   }
 });
 
-/* ================= 發言紀錄 API (支援搜尋 / 分頁) ================= */
+
+/* ================= 發言紀錄 API (支援搜尋 / 分頁 / target) ================= */
 adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
@@ -66,11 +67,13 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
       username,
       keyword,
       role,
-      mode
+      mode,
+      target  // <- 新增 target 搜尋條件
     } = req.body;
 
     const offset = (page - 1) * pageSize;
 
+    // 動態條件
     const conditions = [];
     const values = [];
     let i = 1;
@@ -95,6 +98,11 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
       values.push(mode);
     }
 
+    if (target) {
+      conditions.push(`target = $${i++}`); // <- 加入 target
+      values.push(target);
+    }
+
     if (keyword) {
       conditions.push(`message ILIKE $${i++}`);
       values.push(`%${keyword}%`);
@@ -108,7 +116,6 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
       `SELECT COUNT(*) FROM message_logs ${whereSql}`,
       values
     );
-
     const total = parseInt(totalRes.rows[0].count, 10);
 
     // ⭐ 資料
@@ -119,7 +126,7 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
         room,
         username,
         role,
-        message,
+        message AS content,   -- 方便前端 l.content
         message_type,
         mode,
         target,
@@ -144,3 +151,4 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "查詢失敗" });
   }
 });
+
