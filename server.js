@@ -13,7 +13,7 @@ import { adminRouter } from "./admin.js";
 import { authRouter } from "./auth.js";
 import { aiRouter } from "./ai.js";
 import { songRouter } from "./song.js";
-import { chatHandlers } from "./chat.js";
+import { rooms, chatHandlers } from "./chat.js";
 import { songSocket } from "./socketHandlers.js";
 import { songState } from "./song.js"; // 判斷誰是歌手
 dotenv.config();
@@ -49,6 +49,17 @@ app.use("/admin", adminRouter);
 app.use("/auth", authRouter);
 app.use("/ai", aiRouter);
 app.use("/song", songRouter);
+// 回傳房間使用者
+app.get("/getRoomUsers", (req, res) => {
+  const room = req.query.room;
+  if (!room) return res.status(400).json({ error: "缺少 room 參數" });
+
+  const users = rooms[room] || [];
+  // 這裡只回傳使用者簡單資訊，避免泄露 socketId 等
+  const simpleUsers = users.map(u => ({ name: u.name, type: u.type }));
+  
+  res.json({ users: simpleUsers });
+});
 // app.get("/livekit-token")
 app.get("/livekit-token", async (req, res) => {
   const { room, name } = req.query;  // 改成 name
