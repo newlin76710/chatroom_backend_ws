@@ -95,6 +95,18 @@ export function chatHandlers(io, socket) {
         // 加入或更新房間列表
         rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gender, avatar });
 
+        // 更新 DB 在線狀態 ⭐
+        try {
+            await pool.query(
+                `UPDATE users_ws
+                 SET is_online=true, last_seen=NOW()
+                 WHERE username=$1`,
+                [name]
+            );
+        } catch (err) {
+            console.error("更新 is_online 失敗：", err);
+        }
+        
         // 加入 AI（如果沒加入過）
         aiNames.forEach(ai => {
             if (!rooms[room].find(u => u.name === ai)) {
