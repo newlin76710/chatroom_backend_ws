@@ -152,7 +152,7 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
   }
 });
 
-/* ================= 等級管理：使用者清單 ================= */
+/* ================= 等級管理：使用者清單（支援分頁 & 過濾訪客） ================= */
 adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
@@ -160,32 +160,50 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
     if (!user || user.level < 99)
       return res.status(403).json({ error: "權限不足" });
 
-    const { keyword } = req.body;
+    let { keyword = "", page = 1, pageSize = 20 } = req.body;
 
+    // 過濾非帳號（只要 account_type = 'account'）
     const values = [];
-    let where = "";
+    let where = "WHERE account_type = 'account'";
 
     if (keyword) {
-      where = "WHERE username ILIKE $1";
+      where += " AND username ILIKE $1";
       values.push(`%${keyword}%`);
     }
 
-    const result = await pool.query(
+    const offset = (page - 1) * pageSize;
+
+    // 總筆數
+    const totalRes = await pool.query(
+      `SELECT COUNT(*) FROM users_ws ${where}`,
+      values
+    );
+    const total = parseInt(totalRes.rows[0].count, 10);
+
+    // 取得資料（分頁）
+    const dataRes = await pool.query(
       `
       SELECT id, username, level, created_at
       FROM users_ws
       ${where}
       ORDER BY level DESC, created_at ASC
+      LIMIT $${values.length + 1} OFFSET $${values.length + 2}
       `,
-      values
+      [...values, pageSize, offset]
     );
 
-    res.json({ users: result.rows });
+    res.json({
+      page,
+      pageSize,
+      total,
+      users: dataRes.rows,
+    });
   } catch (err) {
     console.error("查詢使用者等級失敗", err);
     res.status(500).json({ error: "查詢失敗" });
   }
 });
+
 
 /* ================= 等級管理：調整等級 ================= */
 adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
