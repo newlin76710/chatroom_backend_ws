@@ -55,10 +55,14 @@ authRouter.post("/guest", async (req, res) => {
     if (accountExists.rows.length) return res.status(400).json({ error: "暱稱已有人使用" });
 
     const existsOnline = await pool.query(
-      `SELECT 1 FROM users_ws WHERE username=$1 AND is_online=true`,
+      `SELECT 1 FROM users_ws WHERE username=$1 AND is_online = true AND last_seen > NOW() - INTERVAL '30 seconds'`,
       [guestName]
     );
-    if (existsOnline.rows.length) return res.status(400).json({ error: "暱稱已有人使用" });
+
+    if (existsOnline.rows.length) {
+      return res.status(400).json({ error: "暱稱已有人使用" });
+    }
+
 
     const now = new Date();
     const guestToken = crypto.randomUUID();

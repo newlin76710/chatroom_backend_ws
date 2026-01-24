@@ -322,6 +322,21 @@ export function chatHandlers(io, socket) {
 
     socket.on("leaveRoom", removeUser);
     socket.on("disconnect", removeUser);
+    // ⭐ Heartbeat 事件
+    socket.on("heartbeat", async () => {
+        const name = socket.data?.name;
+        if (!name) return;
+        try {
+            await pool.query(
+                `UPDATE users_ws
+             SET is_online=true, last_seen=NOW()
+             WHERE username=$1`,
+                [name]
+            );
+        } catch (err) {
+            console.error("Heartbeat 更新失敗：", err);
+        }
+    });
 }
 
 // --- AI 自動對話 ---
