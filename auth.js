@@ -198,7 +198,6 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     // 如果有改密碼就 hash
     let hashedPassword = user.password; // 原本密碼
     if (password && password.trim() !== "") {
-      const bcrypt = require("bcrypt");
       hashedPassword = await bcrypt.hash(password, 10);
     }
 
