@@ -182,3 +182,44 @@ authRouter.post("/logout", async (req, res) => {
     res.status(500).json({ error: "登出失敗" });
   }
 });
+
+// 修改資料
+authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+
+    // 只允許已註冊帳號修改資料，訪客不可
+    if (user.account_type !== "account") {
+      return res.status(403).json({ error: "訪客無法修改資料" });
+    }
+
+    const { newUsername, password, gender, avatar } = req.body;
+
+    // 如果有改密碼就 hash
+    let hashedPassword = user.password; // 原本密碼
+    if (password && password.trim() !== "") {
+      const bcrypt = require("bcrypt");
+      hashedPassword = await bcrypt.hash(password, 10);
+    }
+
+    // 更新資料
+    const updateRes = await pool.query(
+      `UPDATE users_ws 
+       SET username = $1, password = $2, gender = $3, avatar = $4
+       WHERE id = $5
+       RETURNING id, username, gender, avatar, level, exp`,
+      [
+        newUsername || user.username,
+        hashedPassword,
+        gender || user.gender,
+        avatar || user.avatar,
+        user.id,
+      ]
+    );
+
+    res.json({ message: "修改成功", user: updateRes.rows[0] });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "修改資料失敗" });
+  }
+});
