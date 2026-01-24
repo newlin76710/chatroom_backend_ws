@@ -22,7 +22,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173", "https://boygirl.ek21.com", "https://windsong.ek21.com"],
+    origin: ["http://localhost:5173", "https://www.ek21.com", "https://boygirl.ek21.com", "https://windsong.ek21.com"],
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -36,7 +36,7 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // ===== Middleware =====
 app.use(cors({
-  origin: ["http://localhost:5173", "https://boygirl.ek21.com", "https://windsong.ek21.com"],
+  origin: ["http://localhost:5173", "https://www.ek21.com", "https://boygirl.ek21.com", "https://windsong.ek21.com"],
   methods: ["GET","POST"],
   credentials: true
 }));
