@@ -106,7 +106,7 @@ export function chatHandlers(io, socket) {
         } catch (err) {
             console.error("更新 is_online 失敗：", err);
         }
-        
+
         // 加入 AI（如果沒加入過）
         aiNames.forEach(ai => {
             if (!rooms[room].find(u => u.name === ai)) {
@@ -313,14 +313,20 @@ export function chatHandlers(io, socket) {
         callback(users);
     });
 
-    // --- 離開房間 / 斷線 ---
+    // ================== 離開房間 ==================
     const removeUser = () => {
+        if (socket.data.hasLeft) return; // 避免重複
+        socket.data.hasLeft = true;
+
         const { room, name } = socket.data || {};
         if (!room || !rooms[room]) return;
-        rooms[room] = rooms[room].filter(u => u.id !== socket.id && u.name !== name);
+
+        const wasInRoom = rooms[room].some(u => u.id === socket.id);
+
+        rooms[room] = rooms[room].filter(u => u.id !== socket.id);
         socket.leave(room);
 
-        if (name) {
+        if (name && wasInRoom) {
             if (songState[room]?.currentSinger === name) {
                 clearTimeout(songState[room].scoreTimer);
                 songState[room].currentSinger = null;
