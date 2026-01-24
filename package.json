@@ -16,7 +16,8 @@
     "socket.io": "^4.7.2",
     "mediasoup": "^3.18.3",
     "multer": "^1.4.5-lts.1",
-    "music-metadata": "^8.0.2"
+    "music-metadata": "^8.0.2",
+    "livekit-server-sdk": "2.15.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
