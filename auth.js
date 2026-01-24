@@ -193,7 +193,7 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "訪客無法修改資料" });
     }
 
-    const { newUsername, password, gender, avatar } = req.body;
+    const { username, password, gender, avatar } = req.body;
 
     // 如果有改密碼就 hash
     let hashedPassword = user.password; // 原本密碼
@@ -208,7 +208,7 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
        WHERE id = $5
        RETURNING id, username, gender, avatar, level, exp`,
       [
-        newUsername || user.username,
+        username || user.username,
         hashedPassword,
         gender || user.gender,
         avatar || user.avatar,
