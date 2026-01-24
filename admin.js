@@ -152,3 +152,80 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
   }
 });
 
+/* ================= 等級管理：使用者清單 ================= */
+adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user || user.level < 99)
+      return res.status(403).json({ error: "權限不足" });
+
+    const { keyword } = req.body;
+
+    const values = [];
+    let where = "";
+
+    if (keyword) {
+      where = "WHERE username ILIKE $1";
+      values.push(`%${keyword}%`);
+    }
+
+    const result = await pool.query(
+      `
+      SELECT id, username, level, created_at
+      FROM users_ws
+      ${where}
+      ORDER BY level DESC, created_at ASC
+      `,
+      values
+    );
+
+    res.json({ users: result.rows });
+  } catch (err) {
+    console.error("查詢使用者等級失敗", err);
+    res.status(500).json({ error: "查詢失敗" });
+  }
+});
+
+/* ================= 等級管理：調整等級 ================= */
+adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
+  try {
+    const admin = req.user;
+    const { username, level } = req.body;
+
+    if (!admin || admin.level < 99)
+      return res.status(403).json({ error: "權限不足" });
+
+    if (!username || typeof level !== "number")
+      return res.status(400).json({ error: "參數錯誤" });
+
+    // 不能調自己
+    if (username === admin.username)
+      return res.status(400).json({ error: "不能修改自己的等級" });
+
+    // 查目標使用者
+    const targetRes = await pool.query(
+      `SELECT id, level FROM users_ws WHERE username=$1`,
+      [username]
+    );
+
+    if (!targetRes.rows.length)
+      return res.status(404).json({ error: "使用者不存在" });
+
+    const target = targetRes.rows[0];
+
+    // 不能調到 > 自己
+    if (level > admin.level)
+      return res.status(400).json({ error: "不能設定高於自己的等級" });
+
+    await pool.query(
+      `UPDATE users_ws SET level=$1 WHERE username=$2`,
+      [level, username]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("調整使用者等級失敗", err);
+    res.status(500).json({ error: "操作失敗" });
+  }
+});
