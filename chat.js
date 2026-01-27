@@ -48,7 +48,7 @@ async function logMessage({ room, username, role, message, mode = "public", targ
 // Socket.io 聊天邏輯
 export function chatHandlers(io, socket) {
 
-    // --- 加入房間 ---
+    // --- 進入房間 ---
     socket.on("joinRoom", async ({ room, user }) => {
         const state = getRoomState(room);
         socket.join(room);
@@ -128,7 +128,7 @@ export function chatHandlers(io, socket) {
         if (!songState[room]) songState[room] = { currentSinger: null, scores: [], scoreTimer: null };
 
         // 廣播更新
-        io.to(room).emit("systemMessage", `${name} 加入聊天室`);
+        io.to(room).emit("systemMessage", `${name} 進入聊天室`);
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);

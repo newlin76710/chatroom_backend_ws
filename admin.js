@@ -99,7 +99,7 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
     }
 
     if (target) {
-      conditions.push(`target = $${i++}`); // <- 加入 target
+      conditions.push(`target = $${i++}`);
       values.push(target);
     }
 

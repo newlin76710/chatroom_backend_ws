@@ -46,7 +46,7 @@ export function songSocket(io, socket) {
       currentSinger: state.currentSinger || null
     });
 
-    console.log(`[Debug] ${name} 加入 song room ${room}`);
+    console.log(`[Debug] ${name} 進入 song room ${room}`);
   });
 
   socket.on("grabMic", async ({ room, singer }) => {
