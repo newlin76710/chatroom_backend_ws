@@ -128,7 +128,7 @@ export function chatHandlers(io, socket) {
         if (!songState[room]) songState[room] = { currentSinger: null, scores: [], scoreTimer: null };
 
         // 廣播更新
-        io.to(room).emit("systemMessage", `${name} 加入房間`);
+        io.to(room).emit("systemMessage", `${name} 加入聊天室`);
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
@@ -333,7 +333,7 @@ export function chatHandlers(io, socket) {
                 songState[room].scoreTimer = null;
                 io.to(room).emit("user-stop-singing", { singer: name });
             }
-            io.to(room).emit("systemMessage", `${name} 離開房間`);
+            io.to(room).emit("systemMessage", `${name} 離開聊天室`);
             io.to(room).emit("updateUsers", rooms[room]);
         }
     };
