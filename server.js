@@ -50,7 +50,7 @@ app.use("/admin", adminRouter);
 app.use("/auth", authRouter);
 app.use("/ai", aiRouter);
 app.use("/song", songRouter);
-app.use("/quick-phrases", quickPhraseRouter);
+app.use("/api/quick-phrases", quickPhraseRouter);
 // 回傳房間使用者
 app.get("/getRoomUsers", (req, res) => {
   const room = req.query.room;
