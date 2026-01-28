@@ -18,6 +18,8 @@ import { songSocket } from "./socketHandlers.js";
 import { songState } from "./song.js"; // 判斷誰是歌手
 import { quickPhrasesRouter } from "./quickPhrase.js";
 import { ipRouter } from "./blockIP.js";
+import { announcementRouter } from "./announcementRouter.js";
+
 dotenv.config();
 
 const app = express();
@@ -51,6 +53,7 @@ app.use("/admin", adminRouter);
 app.use("/auth", authRouter);
 app.use("/ai", aiRouter);
 app.use("/song", songRouter);
+app.use("/api/announcement", announcementRouter);
 app.use("/api/quick-phrases", quickPhrasesRouter);
 app.use("/api/blocked-ips", ipRouter);
 // 回傳房間使用者
