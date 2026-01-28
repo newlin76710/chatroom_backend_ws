@@ -17,6 +17,7 @@ import { rooms, chatHandlers } from "./chat.js";
 import { songSocket } from "./socketHandlers.js";
 import { songState } from "./song.js"; // 判斷誰是歌手
 import { quickPhrasesRouter } from "./quickPhrase.js";
+import { ipRouter } from "./blockIP.js";
 dotenv.config();
 
 const app = express();
@@ -51,6 +52,7 @@ app.use("/auth", authRouter);
 app.use("/ai", aiRouter);
 app.use("/song", songRouter);
 app.use("/api/quick-phrases", quickPhrasesRouter);
+app.use("/api/blocked-ips", ipRouter);
 // 回傳房間使用者
 app.get("/getRoomUsers", (req, res) => {
   const room = req.query.room;
