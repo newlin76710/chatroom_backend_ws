@@ -58,6 +58,14 @@ authRouter.post("/guest", async (req, res) => {
   try {
     // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
+      await logLogin({
+        username: username || "訪客",
+        loginType: "guest",
+        ip,
+        userAgent,
+        success: false,
+        failReason: "IP 被封鎖",
+      });
       return res.status(403).json({ error: "你的 IP 已被封鎖，無法登入" });
     }
     const { gender, username } = req.body;
@@ -145,6 +153,14 @@ authRouter.post("/login", async (req, res) => {
   try {
     // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
+      await logLogin({
+        username: username || "-",
+        loginType: "normal",
+        ip,
+        userAgent,
+        success: false,
+        failReason: "IP 被封鎖",
+      });
       return res.status(403).json({ error: "你的 IP 已被封鎖，無法登入" });
     }
     const { username, password } = req.body;
