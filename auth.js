@@ -15,6 +15,19 @@ function getClientIP(req) {
     req.socket.remoteAddress
   );
 }
+/* ================= 工具 ================= */
+async function isIPBlocked(ip) {
+  try {
+    const result = await pool.query(
+      `SELECT 1 FROM blocked_ips WHERE ip=$1 LIMIT 1`,
+      [ip]
+    );
+    return result.rowCount > 0;
+  } catch (err) {
+    console.error("IP 檢查失敗:", err);
+    return false; // 失敗不阻擋登入
+  }
+}
 
 /* ================= 驗證 Middleware ================= */
 export const authMiddleware = async (req, res, next) => {
@@ -43,6 +56,10 @@ authRouter.post("/guest", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
   try {
+    // IP 黑名單檢查
+    if (await isIPBlocked(ip)) {
+      return res.status(403).json({ error: "你的 IP 已被封鎖，無法登入" });
+    }
     const { gender, username } = req.body;
     const safeGender = gender === "男" ? "男" : "女";
     const baseName = username?.trim() ? `訪客_${username.trim()}` : "訪客" + Math.floor(Math.random() * 10000);
@@ -126,6 +143,10 @@ authRouter.post("/login", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
   try {
+    // IP 黑名單檢查
+    if (await isIPBlocked(ip)) {
+      return res.status(403).json({ error: "你的 IP 已被封鎖，無法登入" });
+    }
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
 
