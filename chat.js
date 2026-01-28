@@ -263,7 +263,7 @@ export function chatHandlers(io, socket) {
         if (!users) return;
 
         const kicker = users.find(u => u.socketId === socket.id);
-        if (!kicker || kicker.level < 99) {
+        if (!kicker || kicker.level < 91) {
             socket.emit("kickFailed", { reason: "權限不足" });
             return;
         }
