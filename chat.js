@@ -295,7 +295,7 @@ export function chatHandlers(io, socket) {
 
         // 2️⃣ 通知前端
         targetSocket.emit("forceLogout", {
-            reason: "你已被 Lv.99 玩家踢出"
+            reason: "你已被管理員踢出"
         });
 
         // 3️⃣ 強制斷線（會自動觸發你原本的 disconnect → removeUser）
@@ -303,7 +303,7 @@ export function chatHandlers(io, socket) {
 
         /* ========================= */
 
-        io.to(room).emit("systemMessage", `${targetName} 被 Lv.99 玩家踢出`);
+        io.to(room).emit("systemMessage", `${targetName} 被管理員踢出`);
     });
 
 
