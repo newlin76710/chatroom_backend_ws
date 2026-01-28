@@ -12,7 +12,7 @@ adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
     const user = req.user;
 
     // ⭐ 權限檢查
-    if (!user || user.level < 91)
+    if (!user || user.level < 99)
       return res.status(403).json({ error: "權限不足" });
 
     const offset = (page - 1) * pageSize;
@@ -57,7 +57,7 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
     const user = req.user;
 
     // ⭐ 權限檢查
-    if (!user || user.level < 91)
+    if (!user || user.level < 99)
       return res.status(403).json({ error: "權限不足" });
 
     const {
@@ -157,7 +157,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
 
-    if (!user || user.level < 91)
+    if (!user || user.level < 99)
       return res.status(403).json({ error: "權限不足" });
 
     let { keyword = "", page = 1, pageSize = 20 } = req.body;
@@ -211,7 +211,7 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
     const admin = req.user;
     const { username, level } = req.body;
 
-    if (!admin || admin.level < 91)
+    if (!admin || admin.level < 99)
       return res.status(403).json({ error: "權限不足" });
 
     if (!username || typeof level !== "number")
