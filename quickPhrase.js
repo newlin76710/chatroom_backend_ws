@@ -11,7 +11,7 @@ quickPhrasesRouter.get("/", authMiddleware, async (req, res) => {
     const result = await pool.query(
       `SELECT id, content, sort_order 
        FROM quick_phrase 
-       WHERE account_id = $1 
+       WHERE user_id = $1 
        ORDER BY sort_order ASC
        LIMIT 10`,
       [userId]
@@ -31,16 +31,16 @@ quickPhrasesRouter.post("/new", authMiddleware, async (req, res) => {
     if (!content || !content.trim()) return res.status(400).json({ error: "內容不可為空" });
 
     // 先檢查是否超過 10 個
-    const countRes = await pool.query(`SELECT COUNT(*) FROM quick_phrase WHERE account_id=$1`, [userId]);
+    const countRes = await pool.query(`SELECT COUNT(*) FROM quick_phrase WHERE user_id=$1`, [userId]);
     if (parseInt(countRes.rows[0].count) >= 10) {
       return res.status(400).json({ error: "最多只能新增 10 個常用語" });
     }
 
-    const sortRes = await pool.query(`SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM quick_phrase WHERE account_id=$1`, [userId]);
+    const sortRes = await pool.query(`SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM quick_phrase WHERE user_id=$1`, [userId]);
     const nextOrder = sortRes.rows[0].next_order;
 
     const insertRes = await pool.query(
-      `INSERT INTO quick_phrase (account_id, content, sort_order)
+      `INSERT INTO quick_phrase (user_id, content, sort_order)
        VALUES ($1, $2, $3)
        RETURNING id, content, sort_order`,
       [userId, content.trim(), nextOrder]
@@ -63,7 +63,7 @@ quickPhrasesRouter.post("/update", authMiddleware, async (req, res) => {
     const updateRes = await pool.query(
       `UPDATE quick_phrase 
        SET content=$1, updated_at=NOW() 
-       WHERE id=$2 AND account_id=$3
+       WHERE id=$2 AND user_id=$3
        RETURNING id, content, sort_order`,
       [content.trim(), id, userId]
     );
@@ -85,7 +85,7 @@ quickPhrasesRouter.post("/delete", authMiddleware, async (req, res) => {
     if (!id) return res.status(400).json({ error: "缺少 id" });
 
     const delRes = await pool.query(
-      `DELETE FROM quick_phrase WHERE id=$1 AND account_id=$2 RETURNING id`,
+      `DELETE FROM quick_phrase WHERE id=$1 AND user_id=$2 RETURNING id`,
       [id, userId]
     );
 
