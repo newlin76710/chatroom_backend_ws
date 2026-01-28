@@ -55,6 +55,7 @@ export const authMiddleware = async (req, res, next) => {
 authRouter.post("/guest", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
+  const { gender, username } = req.body;
   try {
     // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
@@ -68,7 +69,6 @@ authRouter.post("/guest", async (req, res) => {
       });
       return res.status(403).json({ error: "你的 IP 已被封鎖，無法登入" });
     }
-    const { gender, username } = req.body;
     const safeGender = gender === "男" ? "男" : "女";
     const baseName = username?.trim() ? `訪客_${username.trim()}` : "訪客" + Math.floor(Math.random() * 10000);
     let guestName = baseName;
@@ -150,6 +150,7 @@ authRouter.post("/register", async (req, res) => {
 authRouter.post("/login", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
+  const { username, password } = req.body;
   try {
     // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
@@ -163,7 +164,6 @@ authRouter.post("/login", async (req, res) => {
       });
       return res.status(403).json({ error: "你的 IP 已被封鎖，無法登入" });
     }
-    const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
 
     const result = await pool.query(
