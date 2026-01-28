@@ -156,7 +156,7 @@ export function chatHandlers(io, socket) {
             if (dbUser) {
                 let { level, exp, gender, avatar, account_type } = dbUser;
                 exp += 5;
-                while (exp >= expForNextLevel(level)) {
+                while (level < 90 && exp >= expForNextLevel(level)) {
                     exp -= expForNextLevel(level);
                     level += 1;
                 }
