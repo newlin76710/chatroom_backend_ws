@@ -103,7 +103,7 @@ authRouter.post("/register", async (req, res) => {
     const { username, password, gender, phone, email, avatar } = req.body;
     if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
 
-    const exist = await pool.query(`SELECT id FROM users WHERE username = $1`, [username]);
+    const exist = await pool.query(`SELECT id FROM users_ws WHERE username = $1`, [username]);
     if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
 
     const hash = await bcrypt.hash(password, 10);
