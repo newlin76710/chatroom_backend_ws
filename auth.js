@@ -100,7 +100,7 @@ authRouter.post("/guest", async (req, res) => {
        ON CONFLICT (username) DO UPDATE SET
          last_login=EXCLUDED.last_login,
          is_online=true,
-         login_token=EXCLUDED.login_token
+         login_token=EXCLUDED.login_token,
          gender = EXCLUDED.gender
        RETURNING id, username, gender, level, exp`,
       [guestName, randomPassword, safeGender, now, guestToken]
