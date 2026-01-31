@@ -5,44 +5,71 @@ import { authMiddleware } from "./auth.js"; // 驗證 token 並填 req.user
 
 export const adminRouter = express.Router();
 
-/* ================= 登入紀錄 API (支援分頁) ================= */
+/* ================= 登入紀錄 API（支援分頁 / 日期） ================= */
 adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
   try {
-    const { page = 1, pageSize = 20 } = req.body;
     const user = req.user;
 
-    // ⭐ 權限檢查
     if (!user || user.level < 99)
       return res.status(403).json({ error: "權限不足" });
 
+    const {
+      page = 1,
+      pageSize = 20,
+      from,
+      to
+    } = req.body;
+
     const offset = (page - 1) * pageSize;
 
+    const conditions = [];
+    const values = [];
+    let i = 1;
+
+    if (from) {
+      conditions.push(`login_at >= $${i++}`);
+      values.push(from);
+    }
+
+    if (to) {
+      conditions.push(`login_at <= $${i++}`);
+      values.push(to);
+    }
+
+    const whereSql =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
     // 總筆數
-    const totalRes = await pool.query(`SELECT COUNT(*) FROM login_logs`);
+    const totalRes = await pool.query(
+      `SELECT COUNT(*) FROM login_logs ${whereSql}`,
+      values
+    );
     const total = parseInt(totalRes.rows[0].count, 10);
 
-    // 取得資料
+    // 資料
     const logsRes = await pool.query(
-      `SELECT id, username, login_type, ip_address, success, fail_reason, login_at
-       FROM login_logs
-       ORDER BY login_at DESC
-       LIMIT $1 OFFSET $2`,
-      [pageSize, offset]
+      `
+      SELECT
+        id,
+        username,
+        login_type,
+        ip_address,
+        success,
+        fail_reason,
+        login_at
+      FROM login_logs
+      ${whereSql}
+      ORDER BY login_at DESC
+      LIMIT $${i++} OFFSET $${i++}
+      `,
+      [...values, pageSize, offset]
     );
 
     res.json({
       page,
       pageSize,
       total,
-      logs: logsRes.rows.map(l => ({
-        id: l.id,
-        username: l.username,
-        login_type: l.login_type,
-        ip_address: l.ip_address,
-        success: l.success,
-        fail_reason: l.fail_reason,
-        login_at: l.login_at,
-      })),
+      logs: logsRes.rows,
     });
   } catch (err) {
     console.error("查詢登入紀錄失敗", err);
@@ -51,12 +78,11 @@ adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
 });
 
 
-/* ================= 發言紀錄 API (支援搜尋 / 分頁 / target) ================= */
+/* ================= 發言紀錄 API（搜尋 / 分頁 / target / 日期） ================= */
 adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
 
-    // ⭐ 權限檢查
     if (!user || user.level < 99)
       return res.status(403).json({ error: "權限不足" });
 
@@ -68,12 +94,13 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
       keyword,
       role,
       mode,
-      target  // <- 新增 target 搜尋條件
+      target,
+      from,
+      to
     } = req.body;
 
     const offset = (page - 1) * pageSize;
 
-    // 動態條件
     const conditions = [];
     const values = [];
     let i = 1;
@@ -108,17 +135,27 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
       values.push(`%${keyword}%`);
     }
 
+    if (from) {
+      conditions.push(`created_at >= $${i++}`);
+      values.push(from);
+    }
+
+    if (to) {
+      conditions.push(`created_at <= $${i++}`);
+      values.push(to);
+    }
+
     const whereSql =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    // ⭐ 總筆數
+    // 總筆數
     const totalRes = await pool.query(
       `SELECT COUNT(*) FROM message_logs ${whereSql}`,
       values
     );
     const total = parseInt(totalRes.rows[0].count, 10);
 
-    // ⭐ 資料
+    // 資料
     const dataRes = await pool.query(
       `
       SELECT
@@ -144,7 +181,7 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
       page,
       pageSize,
       total,
-      logs: dataRes.rows
+      logs: dataRes.rows,
     });
   } catch (err) {
     console.error("查詢發言紀錄失敗", err);
@@ -152,7 +189,8 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
   }
 });
 
-/* ================= 等級管理：使用者清單（支援分頁 & 過濾訪客） ================= */
+
+/* ================= 使用者等級清單（分頁 / 搜尋 / 過濾訪客） ================= */
 adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
@@ -160,9 +198,12 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
     if (!user || user.level < 99)
       return res.status(403).json({ error: "權限不足" });
 
-    let { keyword = "", page = 1, pageSize = 20 } = req.body;
+    const {
+      keyword = "",
+      page = 1,
+      pageSize = 20
+    } = req.body;
 
-    // 過濾非帳號（只要 account_type = 'account'）
     const values = [];
     let where = "WHERE account_type = 'account'";
 
@@ -180,7 +221,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
     );
     const total = parseInt(totalRes.rows[0].count, 10);
 
-    // 取得資料（分頁）
+    // 資料
     const dataRes = await pool.query(
       `
       SELECT id, username, level, created_at
@@ -205,7 +246,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
 });
 
 
-/* ================= 等級管理：調整等級 ================= */
+/* ================= 調整使用者等級 ================= */
 adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
   try {
     const admin = req.user;
@@ -217,27 +258,22 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
     if (!username || typeof level !== "number")
       return res.status(400).json({ error: "參數錯誤" });
 
-    // 不能調自己
     if (username === admin.username)
       return res.status(400).json({ error: "不能修改自己的等級" });
 
-    // 查目標使用者
     const targetRes = await pool.query(
-      `SELECT id, level FROM users_ws WHERE username=$1`,
+      `SELECT id, level FROM users_ws WHERE username = $1`,
       [username]
     );
 
     if (!targetRes.rows.length)
       return res.status(404).json({ error: "使用者不存在" });
 
-    const target = targetRes.rows[0];
-
-    // 不能調到 > 自己
     if (level > admin.level)
       return res.status(400).json({ error: "不能設定高於自己的等級" });
 
     await pool.query(
-      `UPDATE users_ws SET level=$1 WHERE username=$2`,
+      `UPDATE users_ws SET level = $1 WHERE username = $2`,
       [level, username]
     );
 
