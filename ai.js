@@ -1,5 +1,7 @@
 import express from "express";
 
+const AML = process.env.ADMIN_MAX_LEVEL || 99;
+
 export const aiProfiles = {
   "林怡君": { style: "外向", desc: "很健談，喜歡分享生活。", level: 5, job: "社群行銷", gender: "女" },
   "張雅婷": { style: "害羞", desc: "說話溫柔，句子偏短。", level: 8, job: "學生", gender: "女" },
@@ -31,7 +33,7 @@ aiRouter.post("/reply", async (req, res) => {
 });
 
 export async function callAI(userMessage, aiName) {
-  const p = aiProfiles[aiName] || { style: "中性", desc: "", level: 99, job: "未知職業" };
+  const p = aiProfiles[aiName] || { style: "中性", desc: "", level: AML, job: "未知職業" };
   const jobText = p.job ? `她/他的職業是 ${p.job}，` : "";
 
   try {

@@ -4,13 +4,14 @@ import { pool } from "./db.js";
 import { authMiddleware } from "./auth.js"; // 驗證 token 並填 req.user
 
 export const adminRouter = express.Router();
+const AML = process.env.ADMIN_MAX_LEVEL || 99;
 
 /* ================= 登入紀錄 API（支援分頁 / 日期） ================= */
 adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
 
-    if (!user || user.level < 99)
+    if (!user || user.level < AML)
       return res.status(403).json({ error: "權限不足" });
 
     const {
@@ -83,7 +84,7 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
 
-    if (!user || user.level < 99)
+    if (!user || user.level < AML)
       return res.status(403).json({ error: "權限不足" });
 
     const {
@@ -195,7 +196,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
 
-    if (!user || user.level < 99)
+    if (!user || user.level < AML)
       return res.status(403).json({ error: "權限不足" });
 
     const {
@@ -252,7 +253,7 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
     const admin = req.user;
     const { username, level } = req.body;
 
-    if (!admin || admin.level < 99)
+    if (!admin || admin.level < AML)
       return res.status(403).json({ error: "權限不足" });
 
     if (!username || typeof level !== "number")

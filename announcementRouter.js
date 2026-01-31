@@ -2,6 +2,7 @@ import express from "express";
 import { pool } from "./db.js";
 import { authMiddleware } from "./auth.js";
 
+const AML = process.env.ADMIN_MAX_LEVEL || 99;
 export const announcementRouter = express.Router();
 
 /* ===== 取得公告（所有人） ===== */
@@ -27,7 +28,7 @@ announcementRouter.post("/update", authMiddleware, async (req, res) => {
     const { id, title, content } = req.body; // 需要傳 id 指定要更新哪一則
     const { username, level } = req.user;
 
-    if (level < 99) {
+    if (level < AML) {
       return res.status(403).json({ error: "權限不足" });
     }
 
@@ -57,7 +58,7 @@ announcementRouter.post("/create", authMiddleware, async (req, res) => {
     const { title, content } = req.body;
     const { username, level } = req.user;
 
-    if (level < 99) {
+    if (level < AML) {
       return res.status(403).json({ error: "權限不足" });
     }
 
@@ -87,7 +88,7 @@ announcementRouter.post("/delete", authMiddleware, async (req, res) => {
     const { id } = req.body;
     const { level } = req.user;
 
-    if (level < 99) return res.status(403).json({ error: "權限不足" });
+    if (level < AML) return res.status(403).json({ error: "權限不足" });
 
     await pool.query(`DELETE FROM announcements WHERE id=$1`, [id]);
     res.json({ success: true });

@@ -3,6 +3,8 @@ import { callAI, aiNames, aiProfiles } from "./ai.js";
 import { expForNextLevel } from "./utils.js";
 import { songState } from "./song.js";
 
+const AML = process.env.ADMIN_MAX_LEVEL || 99;
+const ANL = process.env.ADMIN_MAX_LEVEL || 91;
 export const rooms = {};
 export const roomContext = {};
 export const aiTimers = {};
@@ -114,7 +116,7 @@ export function chatHandlers(io, socket) {
                     id: ai,
                     name: ai,
                     type: "AI",
-                    level: aiProfiles[ai]?.level || 99,
+                    level: aiProfiles[ai]?.level || AML,
                     gender: aiProfiles[ai]?.gender || "女",
                     avatar: aiProfiles[ai]?.avatar || null,
                     socketId: null
@@ -186,7 +188,7 @@ export function chatHandlers(io, socket) {
                     s.emit("message", msgPayload);
                 }
                 // ⭐ Lv.99 監控私聊
-                else if (s.data?.level === 99) {
+                else if (s.data?.level === AML) {
                     s.emit("message", { ...msgPayload, monitored: true });
                 }
             });
@@ -216,7 +218,7 @@ export function chatHandlers(io, socket) {
                     if (s.data?.name === target || s.data?.name === user.name) {
                         s.emit("message", aiMsg);
                     }
-                    else if (s.data?.level === 99) {
+                    else if (s.data?.level === AML) {
                         s.emit("message", { ...aiMsg, monitored: true });
                     }
                 });
@@ -263,7 +265,7 @@ export function chatHandlers(io, socket) {
         if (!users) return;
 
         const kicker = users.find(u => u.socketId === socket.id);
-        if (!kicker || kicker.level < 91) {
+        if (!kicker || kicker.level < ANL) {
             socket.emit("kickFailed", { reason: "權限不足" });
             return;
         }
@@ -279,7 +281,7 @@ export function chatHandlers(io, socket) {
         const targetSocket = io.sockets.sockets.get(target.socketId);
         if (!targetSocket) return;
 
-        console.log(`👢 Lv99 ${kicker.name} 踢出 ${targetName}`);
+        console.log(`👢 ${kicker.name} 踢出 ${targetName}`);
 
         /* =========================
            ⭐ 關鍵：對齊後登入踢前
