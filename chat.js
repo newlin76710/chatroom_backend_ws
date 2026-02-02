@@ -189,7 +189,7 @@ export function chatHandlers(io, socket) {
                     s.emit("message", msgPayload);
                 }
                 // ⭐ Lv.99 監控私聊
-                else if (s.data?.level === AML) {
+                else if (Number(s.data?.level) === Number(AML)) {
                     s.emit("message", { ...msgPayload, monitored: true });
                 }
             });
@@ -219,7 +219,7 @@ export function chatHandlers(io, socket) {
                     if (s.data?.name === target || s.data?.name === user.name) {
                         s.emit("message", aiMsg);
                     }
-                    else if (s.data?.level === AML) {
+                    else if (Number(s.data?.level) === Number(AML)) {
                         s.emit("message", { ...aiMsg, monitored: true });
                     }
                 });
