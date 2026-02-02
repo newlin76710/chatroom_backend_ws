@@ -5,32 +5,22 @@ import { authMiddleware } from "./auth.js";
 const AML = process.env.ADMIN_MAX_LEVEL || 99; // 版主等級門檻
 export const messageBoardRouter = express.Router();
 
-/* ===== 取得留言 ===== */
 messageBoardRouter.get("/", authMiddleware, async (req, res) => {
   try {
-    const { username, level } = req.user;
-    const isAdmin = level >= AML;
-
     const result = await pool.query(
       `SELECT id, content, author_name, author_token, is_private, created_at
        FROM message_board
        ORDER BY created_at ASC`
     );
 
-    // 過濾私密留言：只給版主或留言者本人
-    const messages = result.rows.filter(msg => {
-      if (!msg.is_private) return true;          // 公開留言
-      if (isAdmin) return true;                  // 版主可見
-      if (msg.author_name === username) return true; // 留言者本人可見
-      return false;
-    });
-
-    res.json(messages);
+    // 全部送前端，不過保留 is_private 欄位
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "載入留言失敗" });
   }
 });
+
 
 /* ===== 新增留言 ===== */
 messageBoardRouter.post("/create", authMiddleware, async (req, res) => {
