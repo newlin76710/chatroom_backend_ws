@@ -4,7 +4,8 @@ import { expForNextLevel } from "./utils.js";
 import { songState } from "./song.js";
 
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
-const ANL = process.env.ADMIN_MAX_LEVEL || 91;
+const ANL = process.env.ADMIN_MIN_LEVEL || 91;
+const OPENAI = process.env.OPENAI || true
 export const rooms = {};
 export const roomContext = {};
 export const aiTimers = {};
@@ -63,7 +64,7 @@ export function chatHandlers(io, socket) {
 
         try {
             const res = await pool.query(
-                `SELECT username, level, exp, gender, avatar FROM users_ws WHERE username=$1`,
+                `SELECT username, level, exp, gender, avatar FROM users WHERE username=$1`,
                 [user.name]
             );
             const dbUser = res.rows[0];
@@ -100,7 +101,7 @@ export function chatHandlers(io, socket) {
         // 更新 DB 在線狀態 ⭐
         try {
             await pool.query(
-                `UPDATE users_ws
+                `UPDATE users
                  SET is_online=true, last_seen=NOW()
                  WHERE username=$1`,
                 [name]
@@ -135,7 +136,7 @@ export function chatHandlers(io, socket) {
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
 
-        //startAIAutoTalk(io, room);
+        if(OPENAI) startAIAutoTalk(io, room);
     });
 
     // --- 聊天訊息 ---
@@ -151,7 +152,7 @@ export function chatHandlers(io, socket) {
         // 更新 EXP / LV
         try {
             const res = await pool.query(
-                `SELECT id, level, exp, gender, avatar, account_type FROM users_ws WHERE username=$1`,
+                `SELECT id, level, exp, gender, avatar, account_type FROM users WHERE username=$1`,
                 [user.name]
             );
             const dbUser = res.rows[0];
@@ -162,7 +163,7 @@ export function chatHandlers(io, socket) {
                     exp -= expForNextLevel(level);
                     level += 1;
                 }
-                await pool.query(`UPDATE users_ws SET level=$1, exp=$2 WHERE id=$3`, [level, exp, dbUser.id]);
+                await pool.query(`UPDATE users SET level=$1, exp=$2 WHERE id=$3`, [level, exp, dbUser.id]);
                 if (rooms[room]) {
                     const roomUser = rooms[room].find(u => u.name === user.name);
                     if (roomUser) {
@@ -289,7 +290,7 @@ export function chatHandlers(io, socket) {
 
         // 1️⃣ DB token 失效（跟後登入踢前一樣）
         await pool.query(
-            `UPDATE users_ws
+            `UPDATE users
          SET is_online=false, login_token=NULL
          WHERE username=$1`,
             [targetName]
@@ -348,7 +349,7 @@ export function chatHandlers(io, socket) {
         if (!name) return;
         try {
             await pool.query(
-                `UPDATE users_ws
+                `UPDATE users
              SET is_online=true, last_seen=NOW()
              WHERE username=$1`,
                 [name]

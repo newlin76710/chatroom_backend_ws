@@ -217,7 +217,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
 
     // 總筆數
     const totalRes = await pool.query(
-      `SELECT COUNT(*) FROM users_ws ${where}`,
+      `SELECT COUNT(*) FROM users ${where}`,
       values
     );
     const total = parseInt(totalRes.rows[0].count, 10);
@@ -226,7 +226,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
     const dataRes = await pool.query(
       `
       SELECT id, username, level, created_at
-      FROM users_ws
+      FROM users
       ${where}
       ORDER BY level DESC, created_at ASC
       LIMIT $${values.length + 1} OFFSET $${values.length + 2}
@@ -263,7 +263,7 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "不能修改自己的等級" });
 
     const targetRes = await pool.query(
-      `SELECT id, level FROM users_ws WHERE username = $1`,
+      `SELECT id, level FROM users WHERE username = $1`,
       [username]
     );
 
@@ -274,7 +274,7 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "不能設定高於自己的等級" });
 
     await pool.query(
-      `UPDATE users_ws SET level = $1 WHERE username = $2`,
+      `UPDATE users SET level = $1 WHERE username = $2`,
       [level, username]
     );
 

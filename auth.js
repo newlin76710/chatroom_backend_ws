@@ -37,7 +37,7 @@ export const authMiddleware = async (req, res, next) => {
 
     const result = await pool.query(
       `SELECT id, username, level, exp, gender, avatar, account_type 
-       FROM users_ws WHERE login_token=$1`,
+       FROM users WHERE login_token=$1`,
       [token]
     );
 
@@ -74,13 +74,13 @@ authRouter.post("/guest", async (req, res) => {
     let guestName = baseName;
 
     const accountExists = await pool.query(
-      `SELECT 1 FROM users_ws WHERE username=$1 AND account_type='account'`,
+      `SELECT 1 FROM users WHERE username=$1 AND account_type='account'`,
       [username]
     );
     if (accountExists.rows.length) return res.status(400).json({ error: "暱稱已有人使用" });
 
     const existsOnline = await pool.query(
-      `SELECT 1 FROM users_ws WHERE username=$1 AND is_online = true AND last_seen > NOW() - INTERVAL '30 seconds'`,
+      `SELECT 1 FROM users WHERE username=$1 AND is_online = true AND last_seen > NOW() - INTERVAL '30 seconds'`,
       [guestName]
     );
 
@@ -94,7 +94,7 @@ authRouter.post("/guest", async (req, res) => {
     const randomPassword = crypto.randomBytes(8).toString("hex");
 
     const result = await pool.query(
-      `INSERT INTO users_ws
+      `INSERT INTO users
        (username, password, gender, last_login, account_type, level, exp, is_online, login_token)
        VALUES ($1,$2,$3,$4,'guest',1,0,true,$5)
        ON CONFLICT (username) DO UPDATE SET
@@ -129,12 +129,12 @@ authRouter.post("/register", async (req, res) => {
     const { username, password, gender, phone, email, avatar } = req.body;
     if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
 
-    const exist = await pool.query(`SELECT id FROM users_ws WHERE username = $1`, [username]);
+    const exist = await pool.query(`SELECT id FROM users WHERE username = $1`, [username]);
     if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
 
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      `INSERT INTO users_ws (username, password, gender, phone, email, avatar, level, exp)
+      `INSERT INTO users (username, password, gender, phone, email, avatar, level, exp)
        VALUES ($1, $2, $3, $4, $5, $6, 1, 0)
        RETURNING id, username, gender, avatar, level, exp`,
       [username, hash, gender === "男" ? "男" : "女", phone || null, email || null, avatar || null]
@@ -169,7 +169,7 @@ authRouter.post("/login", async (req, res) => {
 
     const result = await pool.query(
       `SELECT id, username, password, level, exp, avatar, gender, is_online, login_token
-       FROM users_ws WHERE username=$1`,
+       FROM users WHERE username=$1`,
       [username]
     );
     if (!result.rowCount) return res.status(400).json({ error: "帳號不存在" });
@@ -189,10 +189,10 @@ authRouter.post("/login", async (req, res) => {
         if (socket) socket.emit("forceLogout", { reason: "你的帳號在其他地方登入" });
         ioTokens.delete(oldToken);
       }
-      await pool.query(`UPDATE users_ws SET is_online=false, login_token=NULL WHERE id=$1`, [user.id]);
+      await pool.query(`UPDATE users SET is_online=false, login_token=NULL WHERE id=$1`, [user.id]);
     }
 
-    await pool.query(`UPDATE users_ws SET last_login=$1, login_token=$2, is_online=true WHERE id=$3`, [now, token, user.id]);
+    await pool.query(`UPDATE users SET last_login=$1, login_token=$2, is_online=true WHERE id=$3`, [now, token, user.id]);
 
     await logLogin({ userId: user.id, username: user.username, loginType: "normal", ip, userAgent, success: true });
 
@@ -211,7 +211,7 @@ authRouter.post("/logout", async (req, res) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: "缺少 username" });
 
-    await pool.query(`UPDATE users_ws SET is_online=false, login_token=NULL WHERE username=$1`, [username]);
+    await pool.query(`UPDATE users SET is_online=false, login_token=NULL WHERE username=$1`, [username]);
     await logLogin({ username, loginType: "logout", ip, userAgent, success: true });
 
     res.json({ success: true, message: `${username} 已登出` });
@@ -241,7 +241,7 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
 
     // 更新資料
     const updateRes = await pool.query(
-      `UPDATE users_ws 
+      `UPDATE users 
        SET username = $1, password = $2, gender = $3, avatar = $4
        WHERE id = $5
        RETURNING id, username, gender, avatar, level, exp`,

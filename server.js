@@ -19,14 +19,16 @@ import { songState } from "./song.js"; // 判斷誰是歌手
 import { quickPhrasesRouter } from "./quickPhrase.js";
 import { ipRouter } from "./blockIP.js";
 import { announcementRouter } from "./announcementRouter.js";
-
+import { messageBoardRouter } from "./messageBoardRouter.js";
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173", "https://www.ek21.com", "https://boygirl.ek21.com", "https://windsong.ek21.com"],
+    origin: (origin, callback) => {
+      callback(null, true); // 允許所有 origin
+    },
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -40,8 +42,10 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // ===== Middleware =====
 app.use(cors({
-  origin: ["http://localhost:5173", "https://www.ek21.com", "https://boygirl.ek21.com", "https://windsong.ek21.com"],
-  methods: ["GET","POST"],
+  origin: (origin, callback) => {
+    callback(null, true); // 允許所有 origin
+  },
+  methods: ["GET", "POST"],
   credentials: true
 }));
 app.use(express.json({ limit: "50mb" }));
@@ -56,6 +60,7 @@ app.use("/song", songRouter);
 app.use("/api/announcement", announcementRouter);
 app.use("/api/quick-phrases", quickPhrasesRouter);
 app.use("/api/blocked-ips", ipRouter);
+app.use("/api/message-board", messageBoardRouter);
 // 回傳房間使用者
 app.get("/getRoomUsers", (req, res) => {
   const room = req.query.room;
@@ -64,7 +69,7 @@ app.get("/getRoomUsers", (req, res) => {
   const users = rooms[room] || [];
   // 這裡只回傳使用者簡單資訊，避免泄露 socketId 等
   const simpleUsers = users.map(u => ({ name: u.name, type: u.type }));
-  
+
   res.json({ users: simpleUsers });
 });
 // app.get("/livekit-token")
