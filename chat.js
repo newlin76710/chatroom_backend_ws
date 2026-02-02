@@ -5,7 +5,7 @@ import { songState } from "./song.js";
 
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
 const ANL = process.env.ADMIN_MIN_LEVEL || 91;
-const OPENAI = process.env.OPENAI || true
+const OPENAI = process.env.OPENAI === "true"
 export const rooms = {};
 export const roomContext = {};
 export const aiTimers = {};
