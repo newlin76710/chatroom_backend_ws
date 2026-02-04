@@ -32,8 +32,8 @@ quickPhrasesRouter.post("/new", authMiddleware, async (req, res) => {
 
     // 先檢查是否超過 10 個
     const countRes = await pool.query(`SELECT COUNT(*) FROM quick_phrase WHERE user_id=$1`, [userId]);
-    if (parseInt(countRes.rows[0].count) >= 10) {
-      return res.status(400).json({ error: "最多只能新增 10 個常用語" });
+    if (parseInt(countRes.rows[0].count) >= 20) {
+      return res.status(400).json({ error: "最多只能新增 20 個常用語" });
     }
 
     const sortRes = await pool.query(`SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM quick_phrase WHERE user_id=$1`, [userId]);
