@@ -191,7 +191,7 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
 });
 
 
-/* ================= 使用者等級清單（分頁 / 搜尋 / 過濾訪客） ================= */
+/* ================= 使用者等級清單（分頁 / 搜尋 / 過濾訪客 + 最近登入） ================= */
 adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
@@ -206,10 +206,10 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
     } = req.body;
 
     const values = [];
-    let where = "WHERE account_type = 'account'";
+    let where = "WHERE u.account_type = 'account'";
 
     if (keyword) {
-      where += " AND username ILIKE $1";
+      where += " AND u.username ILIKE $1";
       values.push(`%${keyword}%`);
     }
 
@@ -217,18 +217,26 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
 
     // 總筆數
     const totalRes = await pool.query(
-      `SELECT COUNT(*) FROM users ${where}`,
+      `SELECT COUNT(*) FROM users u ${where}`,
       values
     );
     const total = parseInt(totalRes.rows[0].count, 10);
 
-    // 資料
+    // 使用者資料 + 最近登入
     const dataRes = await pool.query(
       `
-      SELECT id, username, level, created_at
-      FROM users
+      SELECT 
+        u.id,
+        u.username,
+        u.level,
+        u.created_at,
+        MAX(l.login_at) AS last_login_at
+      FROM users u
+      LEFT JOIN login_logs l
+        ON u.username = l.username
       ${where}
-      ORDER BY level DESC, created_at ASC
+      GROUP BY u.id
+      ORDER BY u.level DESC, u.created_at ASC
       LIMIT $${values.length + 1} OFFSET $${values.length + 2}
       `,
       [...values, pageSize, offset]
@@ -245,7 +253,6 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "查詢失敗" });
   }
 });
-
 
 /* ================= 調整使用者等級 ================= */
 adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
