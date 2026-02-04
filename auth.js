@@ -135,7 +135,7 @@ authRouter.post("/register", async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
       `INSERT INTO users (username, password, gender, phone, email, avatar, level, exp)
-       VALUES ($1, $2, $3, $4, $5, $6, 1, 0)
+       VALUES ($1, $2, $3, $4, $5, $6, 2, 0)
        RETURNING id, username, gender, avatar, level, exp`,
       [username, hash, gender === "男" ? "男" : "女", phone || null, email || null, avatar || null]
     );
