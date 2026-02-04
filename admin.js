@@ -284,3 +284,52 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "操作失敗" });
   }
 });
+
+/* ================= 刪除使用者（硬刪除） ================= */
+adminRouter.post("/delete-user", authMiddleware, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const admin = req.user;
+    const { username } = req.body;
+
+    if (!admin || admin.level < AML)
+      return res.status(403).json({ error: "權限不足" });
+
+    if (!username)
+      return res.status(400).json({ error: "缺少 username" });
+
+    if (username === admin.username)
+      return res.status(400).json({ error: "不能刪除自己" });
+
+    await client.query("BEGIN");
+
+    // 先確認目標使用者存在 & 等級
+    const targetRes = await client.query(
+      `SELECT id, level FROM users WHERE username = $1`,
+      [username]
+    );
+
+    if (!targetRes.rows.length)
+      throw new Error("使用者不存在");
+
+    const target = targetRes.rows[0];
+
+    if (target.level > admin.level)
+      throw new Error("不能刪除等級更高的使用者");
+
+    // 🔥 刪除 users
+    await client.query(
+      `DELETE FROM users WHERE username = $1`,
+      [username]
+    );
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("刪除使用者失敗", err);
+    res.status(400).json({ error: err.message || "刪除失敗" });
+  } finally {
+    client.release();
+  }
+});
