@@ -340,3 +340,92 @@ adminRouter.post("/delete-user", authMiddleware, async (req, res) => {
     client.release();
   }
 });
+
+/* ================= 會員查自己的發言 ================= */
+adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user)
+      return res.status(401).json({ error: "未登入" });
+
+    const {
+      page = 1,
+      pageSize = 50,
+      keyword,
+      room,
+      from,
+      to
+    } = req.body;
+
+    const offset = (page - 1) * pageSize;
+
+    const conditions = [
+      `(username = $1 OR target = $1)`
+    ];
+
+    const values = [user.username];
+    let i = 2;
+
+    if (room) {
+      conditions.push(`room = $${i++}`);
+      values.push(room);
+    }
+
+    if (keyword) {
+      conditions.push(`message ILIKE $${i++}`);
+      values.push(`%${keyword}%`);
+    }
+
+    if (from) {
+      conditions.push(`created_at >= $${i++}`);
+      values.push(from);
+    }
+
+    if (to) {
+      conditions.push(`created_at <= $${i++}`);
+      values.push(to);
+    }
+
+    const whereSql = `WHERE ${conditions.join(" AND ")}`;
+
+    // 總筆數
+    const totalRes = await pool.query(
+      `SELECT COUNT(*) FROM message_logs ${whereSql}`,
+      values
+    );
+
+    const total = parseInt(totalRes.rows[0].count, 10);
+
+    // 資料
+    const dataRes = await pool.query(
+      `
+      SELECT
+        id,
+        room,
+        username,
+        role,
+        message,
+        message_type,
+        mode,
+        target,
+        created_at
+      FROM message_logs
+      ${whereSql}
+      ORDER BY created_at DESC
+      LIMIT $${i++} OFFSET $${i++}
+      `,
+      [...values, pageSize, offset]
+    );
+
+    res.json({
+      page,
+      pageSize,
+      total,
+      logs: dataRes.rows,
+    });
+
+  } catch (err) {
+    console.error("查詢自己的發言失敗", err);
+    res.status(500).json({ error: "查詢失敗" });
+  }
+});
