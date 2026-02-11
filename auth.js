@@ -29,6 +29,29 @@ async function isIPBlocked(ip) {
   }
 }
 
+async function isNicknameBlocked(username) {
+  try {
+    const result = await pool.query(
+      `
+      SELECT nickname
+      FROM blocked_nicknames
+      WHERE $1 ILIKE '%' || nickname || '%'
+      LIMIT 1
+      `,
+      [username]
+    );
+
+    return result.rowCount > 0;
+
+  } catch (err) {
+
+    console.error("暱稱檢查失敗:", err);
+
+    // ⭐ 失敗不要擋登入
+    return false;
+  }
+}
+
 /* ================= 驗證 Middleware ================= */
 export const authMiddleware = async (req, res, next) => {
   try {
@@ -69,6 +92,21 @@ authRouter.post("/guest", async (req, res) => {
       });
       return res.status(403).json({ error: "你的 IP 已被封鎖，無法登入" });
     }
+    if (await isNicknameBlocked(username)) {
+      await logLogin({
+        username: username,
+        loginType: "guest",
+        ip,
+        userAgent,
+        success: false,
+        failReason: "暱稱黑名單",
+      });
+
+      return res.status(403).json({
+        error: "此暱稱不可使用"
+      });
+    }
+
     const safeGender = gender === "男" ? "男" : "女";
     const baseName = username?.trim() ? `訪客_${username.trim()}` : "訪客" + Math.floor(Math.random() * 10000);
     let guestName = baseName;
@@ -128,7 +166,11 @@ authRouter.post("/register", async (req, res) => {
   try {
     const { username, password, gender, phone, email, avatar } = req.body;
     if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
-
+    if (await isNicknameBlocked(username)) {
+      return res.status(403).json({
+        error: "此帳號暱稱違反規範"
+      });
+    }
     const exist = await pool.query(`SELECT id FROM users WHERE username = $1`, [username]);
     if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
 
@@ -164,6 +206,17 @@ authRouter.post("/login", async (req, res) => {
         failReason: "IP 被封鎖",
       });
       return res.status(403).json({ error: "你的 IP 已被封鎖，無法登入" });
+    }
+    if (await isNicknameBlocked(username)) {
+      await logLogin({
+        username: username || "-",
+        loginType: "normal",
+        ip,
+        userAgent,
+        success: false,
+        failReason: "暱稱被封鎖",
+      });
+      return res.status(403).json({ error: "你的暱稱已被封鎖，無法登入" });
     }
     if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
 

@@ -17,6 +17,7 @@ import { rooms, chatHandlers } from "./chat.js";
 import { songSocket } from "./socketHandlers.js";
 import { quickPhrasesRouter } from "./quickPhrase.js";
 import { ipRouter } from "./blockIP.js";
+import { nicknameRouter } from "./blockNickname.js";
 import { announcementRouter } from "./announcementRouter.js";
 import { messageBoardRouter } from "./messageBoardRouter.js";
 
@@ -78,6 +79,7 @@ app.use("/song", songRouter);
 app.use("/api/announcement", announcementRouter);
 app.use("/api/quick-phrases", quickPhrasesRouter);
 app.use("/api/blocked-ips", ipRouter);
+app.use("/api/blocked-nicknames", nicknameRouter);
 app.use("/api/message-board", messageBoardRouter);
 
 //////////////////////////////////////////////////////
