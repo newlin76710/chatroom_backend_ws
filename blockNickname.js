@@ -45,15 +45,13 @@ nicknameRouter.get("/", adminOnly, async (req, res) => {
  */
 nicknameRouter.post("/block", adminOnly, async (req, res) => {
   try {
-    const { nickname, reason } = req.body;
+    const { nickname, reason, executor } = req.body;
 
     if (!nickname?.trim()) {
       return res.status(400).json({
         error: "暱稱必填",
       });
     }
-
-    const executor = req.user.username || "未知管理員";
 
     const result = await pool.query(
       `
