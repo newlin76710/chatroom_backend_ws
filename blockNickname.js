@@ -3,6 +3,7 @@ import { pool } from "./db.js";
 
 export const nicknameRouter = express.Router();
 const AML = process.env.ADMIN_MIN_LEVEL || 91;
+
 /**
  * middleware — 限制 91~99
  * 假設 req.user 已經被 authMiddleware 注入
@@ -18,7 +19,6 @@ const adminOnly = (req, res, next) => {
 
   next();
 };
-
 
 /**
  * 取得所有黑名單
@@ -40,7 +40,6 @@ nicknameRouter.get("/", adminOnly, async (req, res) => {
   }
 });
 
-
 /**
  * 新增黑名單
  */
@@ -54,20 +53,21 @@ nicknameRouter.post("/block", adminOnly, async (req, res) => {
       });
     }
 
+    const executor = req.user.username || "未知管理員";
+
     const result = await pool.query(
       `
-      INSERT INTO blocked_nicknames (nickname, reason)
-      VALUES ($1, $2)
-
+      INSERT INTO blocked_nicknames (nickname, reason, executor)
+      VALUES ($1, $2, $3)
       ON CONFLICT (nickname)
       DO UPDATE
       SET
         reason = EXCLUDED.reason,
+        executor = EXCLUDED.executor,
         created_at = NOW()
-
       RETURNING *
       `,
-      [nickname.trim(), reason || null]
+      [nickname.trim(), reason || null, executor]
     );
 
     res.json({
@@ -82,7 +82,6 @@ nicknameRouter.post("/block", adminOnly, async (req, res) => {
     });
   }
 });
-
 
 /**
  * 解除封鎖
