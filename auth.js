@@ -6,6 +6,19 @@ import { logLogin } from "./loginLogger.js";
 
 export const authRouter = express.Router();
 export const ioTokens = new Map();
+const fullWidthRegex = /[^\u0000-\u00ff]/;
+
+function getNicknameLength(str = "") {
+  let len = 0;
+  for (const ch of str) {
+    len += fullWidthRegex.test(ch) ? 2 : 1;
+  }
+  return len;
+}
+
+function isNicknameTooLong(username) {
+  return getNicknameLength(username) > 12;
+}
 
 /* ================= 工具 ================= */
 function getClientIP(req) {
@@ -40,13 +53,9 @@ async function isNicknameBlocked(username) {
       `,
       [username]
     );
-
     return result.rowCount > 0;
-
   } catch (err) {
-
     console.error("暱稱檢查失敗:", err);
-
     // ⭐ 失敗不要擋登入
     return false;
   }
@@ -79,7 +88,13 @@ authRouter.post("/guest", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
   const { gender, username } = req.body;
+
   try {
+    if (!username || isNicknameTooLong(username)) {
+      return res.status(400).json({
+        error: "暱稱最多 6 個中文字 或 12 個英數字",
+      });
+    }
     // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
       await logLogin({
@@ -165,6 +180,11 @@ authRouter.post("/guest", async (req, res) => {
 authRouter.post("/register", async (req, res) => {
   try {
     const { username, password, gender, phone, email, avatar } = req.body;
+    if (!username || isNicknameTooLong(username)) {
+      return res.status(400).json({
+        error: "暱稱最多 6 個中文字 或 12 個英數字",
+      });
+    }
     if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
     if (await isNicknameBlocked(username)) {
       return res.status(403).json({
@@ -195,6 +215,11 @@ authRouter.post("/login", async (req, res) => {
   const userAgent = req.headers["user-agent"];
   const { username, password } = req.body;
   try {
+    if (!username || isNicknameTooLong(username)) {
+      return res.status(400).json({
+        error: "暱稱最多 6 個中文字 或 12 個英數字",
+      });
+    }
     // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
       await logLogin({
@@ -283,9 +308,12 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     if (user.account_type !== "account") {
       return res.status(403).json({ error: "訪客無法修改資料" });
     }
-
     const { username, password, gender, avatar } = req.body;
-
+    if (!username || isNicknameTooLong(username)) {
+      return res.status(400).json({
+        error: "暱稱最多 6 個中文字 或 12 個英數字",
+      });
+    }
     // 如果有改密碼就 hash
     let hashedPassword = user.password; // 原本密碼
     if (password && password.trim() !== "") {
