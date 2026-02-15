@@ -195,8 +195,8 @@ setInterval(() => {
       console.log("🧹 假在線移除:", name);
 
       // 同步移除 token
-      for (const [token, uname] of ioTokens.entries()) {
-        if (uname === name) {
+      for (const [token, data] of ioTokens.entries()) {
+        if (data.username === name) {
           ioTokens.delete(token);
           console.log("🧹 對應 token 移除:", token);
         }

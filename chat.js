@@ -2,6 +2,7 @@ import { pool } from "./db.js";
 import { callAI, aiNames, aiProfiles } from "./ai.js";
 import { expForNextLevel } from "./utils.js";
 import { songState } from "./song.js";
+import { ioTokens } from "./auth.js";
 
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
 const ANL = process.env.ADMIN_MIN_LEVEL || 91;
@@ -62,7 +63,7 @@ export function chatHandlers(io, socket) {
         let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
         let level = 1, exp = 0, gender = "女", avatar = "/avatars/g01.gif";
         let type = user.type || "guest";
-
+        let token = user.token || "";
         try {
             const res = await pool.query(
                 `SELECT username, level, exp, gender, avatar FROM users WHERE username=$1`,
@@ -94,12 +95,15 @@ export function chatHandlers(io, socket) {
             }
             // 移除舊使用者
             rooms[room] = rooms[room].filter(u => u.name !== name);
+            const oldTokenEntry = [...ioTokens.entries()].find(([t, d]) => d.username === name);
+            if (oldTokenEntry) ioTokens.delete(oldTokenEntry[0]);
         }
 
         // 加入或更新房間列表
         rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gender, avatar });
 
         onlineUsers.set(name, Date.now());
+        ioTokens.set(token, { username: name, socketId: socket.id });
 
         // 加入 AI（如果沒加入過）
         aiNames.forEach(ai => {

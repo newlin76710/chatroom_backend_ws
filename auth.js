@@ -71,8 +71,9 @@ export const authMiddleware = async (req, res, next) => {
   try {
     const token = req.headers["authorization"]?.split(" ")[1] || req.body.token;
     if (!token) return res.status(401).json({ error: "No token provided" });
-    const username = ioTokens.get(token);
-    if (!username) return res.status(401).json({ error: "Invalid username token" });
+    const data = ioTokens.get(token);
+    if (!data) return res.status(401).json({ error: "Invalid username token" });
+    const username = data.username;
     const result = await pool.query(
       `SELECT id, username, level, exp, gender, avatar, account_type 
        FROM users WHERE username=$1`,
@@ -168,8 +169,8 @@ authRouter.post("/guest", async (req, res) => {
     const guest = result.rows[0];
 
     // 🔹 記憶體標記為線上
-    onlineUsers.set(guestName, { lastSeen: now, token: guestToken });
-    ioTokens.set(guestToken, guestName);
+    onlineUsers.set(guestName, Date.now());
+    ioTokens.set(guestToken, { username: guestName, socketId: null });
 
     await logLogin({ userId: guest.id, username: guest.username, loginType: "guest", ip, userAgent, success: true });
 
@@ -289,21 +290,26 @@ authRouter.post("/login", async (req, res) => {
 
     // 🔹 記憶體判斷是否已在線
     if (onlineUsers.has(username)) {
-      // 對應的舊 token 可以通知斷線
-      const oldToken = [...ioTokens.entries()]
-        .find(([t, name]) => name === username)?.[0];
-      if (oldToken && ioTokens.has(oldToken)) {
-        const socketId = ioTokens.get(oldToken);
+      // 找出對應的舊 token
+      const oldEntry = [...ioTokens.entries()].find(([t, data]) => data.username === username);
+      if (oldEntry) {
+        const [oldToken, { socketId }] = oldEntry;
+        // 嘗試通知舊 socket 斷線
         const socket = req.app.get("io").sockets.sockets.get(socketId);
-        if (socket) socket.emit("forceLogout", { reason: "你的帳號在其他地方登入" });
+        if (socket) {
+          socket.emit("forceLogout", { reason: "你的帳號在其他地方登入" });
+          socket.disconnect(true);
+        }
+        // 移除舊 token
         ioTokens.delete(oldToken);
       }
+      // 移除線上狀態
       onlineUsers.delete(username);
     }
 
     // 將使用者標記為線上（記憶體）
-    onlineUsers.set(username, { lastSeen: now, token });
-    ioTokens.set(token, username); // token → username 映射
+    onlineUsers.set(username, Date.now());
+    ioTokens.set(token, {username, socketId: null}); // token → username 映射
 
     await logLogin({ userId: user.id, username: user.username, loginType: "normal", ip, userAgent, success: true });
 
@@ -331,8 +337,8 @@ authRouter.post("/logout", async (req, res) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: "缺少 username" });
     // 移除 token
-    for (const [token, user] of ioTokens.entries()) {
-      if (user === username) ioTokens.delete(token);
+    for (const [token, data] of ioTokens.entries()) {
+      if (data.username === username) ioTokens.delete(token);
     }
     onlineUsers.delete(username);
     await logLogin({ username, loginType: "logout", ip, userAgent, success: true });
