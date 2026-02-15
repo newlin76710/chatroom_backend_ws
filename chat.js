@@ -11,6 +11,7 @@ export const roomContext = {};
 export const aiTimers = {};
 export const videoState = {};
 export const displayQueue = {};
+export const onlineUsers = new Map();
 
 /* ================= 工具 ================= */
 function getClientIP(socket) {
@@ -98,17 +99,7 @@ export function chatHandlers(io, socket) {
         // 加入或更新房間列表
         rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gender, avatar });
 
-        // 更新 DB 在線狀態 ⭐
-        try {
-            await pool.query(
-                `UPDATE users
-                 SET is_online=true, last_seen=NOW()
-                 WHERE username=$1`,
-                [name]
-            );
-        } catch (err) {
-            console.error("更新 is_online 失敗：", err);
-        }
+        onlineUsers.set(name, Date.now());
 
         // 加入 AI（如果沒加入過）
         aiNames.forEach(ai => {
@@ -136,7 +127,7 @@ export function chatHandlers(io, socket) {
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
 
-        if(OPENAI) startAIAutoTalk(io, room);
+        if (OPENAI) startAIAutoTalk(io, room);
     });
 
     // --- 聊天訊息 ---
@@ -288,14 +279,7 @@ export function chatHandlers(io, socket) {
            ⭐ 關鍵：對齊後登入踢前
         ========================= */
 
-        // 1️⃣ DB token 失效（跟後登入踢前一樣）
-        await pool.query(
-            `UPDATE users
-         SET is_online=false, login_token=NULL
-         WHERE username=$1`,
-            [targetName]
-        );
-
+        onlineUsers.delete(targetName);
         // 2️⃣ 通知前端
         targetSocket.emit("forceLogout", {
             reason: "你已被管理員踢出"
@@ -339,24 +323,17 @@ export function chatHandlers(io, socket) {
             io.to(room).emit("systemMessage", `${name} 離開聊天室`);
             io.to(room).emit("updateUsers", rooms[room]);
         }
+        if (!name) return;
+        onlineUsers.delete(name);
     };
 
     socket.on("leaveRoom", removeUser);
     socket.on("disconnect", removeUser);
     // ⭐ Heartbeat 事件
-    socket.on("heartbeat", async () => {
-        const name = socket.data?.name;
+    socket.on("heartbeat", () => {
+        const name = socket.data.name;
         if (!name) return;
-        try {
-            await pool.query(
-                `UPDATE users
-             SET is_online=true, last_seen=NOW()
-             WHERE username=$1`,
-                [name]
-            );
-        } catch (err) {
-            console.error("Heartbeat 更新失敗：", err);
-        }
+        onlineUsers.set(name, Date.now());
     });
 }
 

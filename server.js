@@ -10,10 +10,10 @@ import { AccessToken } from "livekit-server-sdk";
 
 import { pool } from "./db.js";
 import { adminRouter } from "./admin.js";
-import { authRouter } from "./auth.js";
+import { authRouter, ioTokens } from "./auth.js";
 import { aiRouter } from "./ai.js";
 import { songRouter, songState } from "./song.js";
-import { rooms, chatHandlers } from "./chat.js";
+import { rooms, chatHandlers, onlineUsers } from "./chat.js";
 import { songSocket } from "./socketHandlers.js";
 import { quickPhrasesRouter } from "./quickPhrase.js";
 import { ipRouter } from "./blockIP.js";
@@ -186,25 +186,26 @@ setInterval(async () => {
 // 🔥 超推薦：清除假在線使用者
 //////////////////////////////////////////////////////
 
-setInterval(async () => {
-  try {
+setInterval(() => {
+  const now = Date.now();
 
-    const result = await pool.query(`
-      UPDATE users
-      SET is_online = false
-      WHERE last_seen < NOW() - INTERVAL '2 minutes'
-      RETURNING username
-    `);
+  for (const [name, last] of onlineUsers.entries()) {
+    if (now - last > 2 * 60 * 1000) { // 2分鐘沒 heartbeat
+      onlineUsers.delete(name);
+      console.log("🧹 假在線移除:", name);
 
-    if (result.rowCount > 0) {
-      console.log("🧹 清除假在線:", result.rows.map(r => r.username));
+      // 同步移除 token
+      for (const [token, uname] of ioTokens.entries()) {
+        if (uname === name) {
+          ioTokens.delete(token);
+          console.log("🧹 對應 token 移除:", token);
+        }
+      }
     }
-
-  } catch (err) {
-    console.error("清除假在線失敗:", err);
   }
+}, 60000);
 
-}, 120000);
+
 
 //////////////////////////////////////////////////////
 // Start server
