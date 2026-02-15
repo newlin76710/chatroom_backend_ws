@@ -62,6 +62,10 @@ async function isNicknameBlocked(username) {
   }
 }
 
+// 允許中文、英文、數字，不允許特殊符號
+const isValidNickname = (name) => /^[\u4e00-\u9fa5a-zA-Z0-9]+$/.test(name);
+
+
 /* ================= 驗證 Middleware ================= */
 export const authMiddleware = async (req, res, next) => {
   try {
@@ -97,7 +101,11 @@ authRouter.post("/guest", async (req, res) => {
         error: "暱稱最多 6 個中文字 或 12 個英數字",
       });
     }
-
+    if (!isValidNickname(username)) {
+      return res.status(400).json({
+        error: "暱稱只能包含中文、英文或數字，不能包含符號"
+      });
+    }
     // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
       await logLogin({
@@ -189,6 +197,11 @@ authRouter.post("/register", async (req, res) => {
         error: "暱稱最多 6 個中文字 或 12 個英數字",
       });
     }
+    if (!isValidNickname(username)) {
+      return res.status(400).json({
+        error: "暱稱只能包含中文、英文或數字，不能包含符號"
+      });
+    }
     if (!username || !password) return res.status(400).json({ error: "缺少帳號或密碼" });
     if (await isNicknameBlocked(username)) {
       return res.status(403).json({
@@ -225,7 +238,11 @@ authRouter.post("/login", async (req, res) => {
         error: "暱稱最多 6 個中文字 或 12 個英數字",
       });
     }
-
+    if (!isValidNickname(username)) {
+      return res.status(400).json({
+        error: "暱稱只能包含中文、英文或數字，不能包含符號"
+      });
+    }
     // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
       await logLogin({
@@ -340,6 +357,11 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
         error: "暱稱最多 6 個中文字 或 12 個英數字",
+      });
+    }
+    if (!isValidNickname(username)) {
+      return res.status(400).json({
+        error: "暱稱只能包含中文、英文或數字，不能包含符號"
       });
     }
     // 如果有改密碼就 hash
