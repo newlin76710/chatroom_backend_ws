@@ -78,8 +78,7 @@ adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
   }
 });
 
-
-/* ================= 發言紀錄 API（搜尋 / 分頁 / target / 日期） ================= */
+/* ================= 發言紀錄 API（搜尋 / 分頁 / target / 最近 2 天） ================= */
 adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
@@ -95,14 +94,12 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
       keyword,
       role,
       mode,
-      target,
-      from,
-      to
+      target
     } = req.body;
 
     const offset = (page - 1) * pageSize;
 
-    const conditions = [];
+    const conditions = [`created_at >= NOW() - INTERVAL '2 days'`]; // 🔹 最近 2 天
     const values = [];
     let i = 1;
 
@@ -136,25 +133,28 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
       values.push(`%${keyword}%`);
     }
 
-    if (from) {
-      conditions.push(`created_at >= $${i++}`);
-      values.push(from);
+    const whereSql = `WHERE ${conditions.join(" AND ")}`;
+
+    // 🔹 使用 username/target 索引快速計算總筆數
+    let total = 0;
+    if (username) {
+      const totalRes = await pool.query(
+        `SELECT SUM(cnt) AS total FROM (
+            SELECT COUNT(*) AS cnt FROM message_logs WHERE username=$1 AND created_at >= NOW() - INTERVAL '2 days'
+            UNION ALL
+            SELECT COUNT(*) AS cnt FROM message_logs WHERE target=$1 AND created_at >= NOW() - INTERVAL '2 days'
+        ) t`,
+        [username]
+      );
+      total = parseInt(totalRes.rows[0].total, 10) || 0;
+    } else {
+      // 無 username 時就算整體條件的筆數
+      const totalRes = await pool.query(
+        `SELECT COUNT(*) FROM message_logs ${whereSql}`,
+        values
+      );
+      total = parseInt(totalRes.rows[0].count, 10);
     }
-
-    if (to) {
-      conditions.push(`created_at <= $${i++}`);
-      values.push(to);
-    }
-
-    const whereSql =
-      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-    // 總筆數
-    const totalRes = await pool.query(
-      `SELECT COUNT(*) FROM message_logs ${whereSql}`,
-      values
-    );
-    const total = parseInt(totalRes.rows[0].count, 10);
 
     // 資料
     const dataRes = await pool.query(
@@ -189,7 +189,6 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "查詢失敗" });
   }
 });
-
 
 /* ================= 使用者等級清單（分頁 / 搜尋 / 過濾訪客 + 最近登入） ================= */
 adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
@@ -341,7 +340,7 @@ adminRouter.post("/delete-user", authMiddleware, async (req, res) => {
   }
 });
 
-/* ================= 會員查自己的發言 ================= */
+/* ================= 會員查自己的發言（只算最近 2 天） ================= */
 adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
@@ -352,19 +351,17 @@ adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
       page = 1,
       pageSize = 50,
       keyword,
-      room,
-      from,
-      to
+      room
     } = req.body;
 
     const offset = (page - 1) * pageSize;
 
-    const conditions = [
-      `(username = $1 OR target = $1)`
-    ];
-
+    const conditions = [`(username = $1 OR target = $1)`];
     const values = [user.username];
     let i = 2;
+
+    // 限制最近 2 天
+    conditions.push(`created_at >= NOW() - INTERVAL '2 days'`);
 
     if (room) {
       conditions.push(`room = $${i++}`);
@@ -376,25 +373,19 @@ adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
       values.push(`%${keyword}%`);
     }
 
-    if (from) {
-      conditions.push(`created_at >= $${i++}`);
-      values.push(from);
-    }
-
-    if (to) {
-      conditions.push(`created_at <= $${i++}`);
-      values.push(to);
-    }
-
     const whereSql = `WHERE ${conditions.join(" AND ")}`;
 
-    // 總筆數
+    // 🔹 使用索引快速計算總筆數（username/target）
     const totalRes = await pool.query(
-      `SELECT COUNT(*) FROM message_logs ${whereSql}`,
-      values
+      `SELECT SUM(cnt) AS total FROM (
+          SELECT COUNT(*) AS cnt FROM message_logs WHERE username=$1 AND created_at >= NOW() - INTERVAL '2 days'
+          UNION ALL
+          SELECT COUNT(*) AS cnt FROM message_logs WHERE target=$1 AND created_at >= NOW() - INTERVAL '2 days'
+      ) t`,
+      [user.username]
     );
 
-    const total = parseInt(totalRes.rows[0].count, 10);
+    const total = parseInt(totalRes.rows[0].total, 10) || 0;
 
     // 資料
     const dataRes = await pool.query(
