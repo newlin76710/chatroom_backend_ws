@@ -45,7 +45,7 @@ nicknameRouter.get("/", adminOnly, async (req, res) => {
  */
 nicknameRouter.post("/block", adminOnly, async (req, res) => {
   try {
-    const { nickname, reason, executor } = req.body;
+    const { level, nickname, reason, executor } = req.body;
 
     if (!nickname?.trim()) {
       return res.status(400).json({
@@ -53,6 +53,26 @@ nicknameRouter.post("/block", adminOnly, async (req, res) => {
       });
     }
 
+    const trimmedNickname = nickname.trim();
+
+    // 查出該暱稱的使用者等級（如果有）
+    const userRes = await pool.query(
+      `SELECT level FROM users WHERE username=$1`,
+      [trimmedNickname]
+    );
+
+    if (userRes.rows.length) {
+      const targetLevel = userRes.rows[0].level;
+
+      // 如果目標等級 >= 自己等級，禁止封鎖
+      if (targetLevel >= level) {
+        return res.status(403).json({
+          error: "不能封鎖等級比自己高或相等的使用者",
+        });
+      }
+    }
+
+    // 封鎖暱稱
     const result = await pool.query(
       `
       INSERT INTO blocked_nicknames (nickname, reason, executor)
@@ -65,7 +85,7 @@ nicknameRouter.post("/block", adminOnly, async (req, res) => {
         created_at = NOW()
       RETURNING *
       `,
-      [nickname.trim(), reason || null, executor]
+      [trimmedNickname, reason || null, executor || req.user.username]
     );
 
     res.json({
@@ -80,6 +100,7 @@ nicknameRouter.post("/block", adminOnly, async (req, res) => {
     });
   }
 });
+
 
 /**
  * 解除封鎖
