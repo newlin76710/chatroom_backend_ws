@@ -50,23 +50,81 @@ export function songSocket(io, socket) {
   });
 
   socket.on("grabMic", async ({ room, singer }) => {
-    if (!songState[room]) songState[room] = { queue: [], currentSinger: null, currentSingerSocketId: null };
     const state = songState[room];
+    if (!state) return;
 
-    // 如果有人正在唱，先踢掉
-    if (state.currentSingerSocketId && state.currentSingerSocketId !== socket.id) {
-      io.to(state.currentSingerSocketId).emit("forceStopSing");
-      state.queue.unshift({ name: state.currentSinger, socketId: state.currentSingerSocketId });
+    const first = state.queue[0];
+
+    // 只有排第一位才可以上麥
+    if (!first || first.socketId !== socket.id) {
+      console.log("[Song] 非法 grabMic");
+      return;
     }
+
+    // 正式移除 queue 第一位
+    state.queue.shift();
 
     state.currentSinger = singer;
     state.currentSingerSocketId = socket.id;
-    state.queue = state.queue.filter(u => u.socketId !== socket.id);
 
-    broadcastMicState(room); // 全體更新
+    broadcastMicState(room);
 
-    // 發 token 給自己
     await sendLiveKitToken(socket.id, room, singer);
+  });
+
+
+  function nextSinger(room) {
+    const state = songState[room];
+    if (!state || state.currentSinger || !state.queue.length) return;
+
+    const next = state.queue[0]; // ⭐ 不 shift
+
+    io.to(next.socketId).emit("yourTurnToSing", {
+      room,
+      singer: next.name,
+    });
+
+    console.log(`[Song] 通知 ${next.name} 上麥`);
+  }
+
+
+  socket.on("joinQueue", ({ room, name }) => {
+    if (!songState[room]) {
+      songState[room] = {
+        queue: [],
+        currentSinger: null,
+        currentSingerSocketId: null,
+      };
+    }
+
+    const state = songState[room];
+
+    // 已經在唱 → 不能排
+    if (state.currentSingerSocketId === socket.id) {
+      return;
+    }
+
+    // 已經在 queue → 不重複加入
+    const alreadyInQueue = state.queue.find(
+      (u) => u.socketId === socket.id
+    );
+    if (alreadyInQueue) {
+      return;
+    }
+
+    // 加入排隊
+    state.queue.push({
+      name,
+      socketId: socket.id,
+    });
+
+    console.log(`[Song] ${name} 加入排隊 room=${room}`);
+
+    // 廣播排隊狀態
+    broadcastMicState(room);
+
+    // 如果現在沒人在唱 → 嘗試叫下一位
+    nextSinger(room);
   });
 
   socket.on("stopSing", ({ room, singer }) => {
