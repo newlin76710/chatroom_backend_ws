@@ -86,6 +86,13 @@ export function songSocket(io, socket) {
 
     broadcastMicState(room);
   });
+  socket.on("leaveQueue", ({ room, name }) => {
+    const state = songState[room];
+    if (!state) return;
+
+    state.queue = state.queue.filter(u => u.socketId !== socket.id);
+    broadcastMicState(room);
+  });
 
   socket.on("grabMic", async ({ room, singer }) => {
     if (!songState[room]) songState[room] = { queue: [], currentSinger: null, currentSingerSocketId: null };
