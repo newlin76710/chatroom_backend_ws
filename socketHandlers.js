@@ -12,7 +12,7 @@ export function songSocket(io, socket) {
       currentSinger: state.currentSinger || null,
     });
 
-    console.log(`[Debug] broadcastMicState for room "${room}": currentSinger=${state.currentSinger}`);
+    console.log(`[Debug] broadcastMicState for room "${room}": currentSinger=${state.currentSinger} queue=${state.queue.map(u => u.name)}`);
   }
 
   async function sendLiveKitToken(socketId, room, identity) {
@@ -34,6 +34,27 @@ export function songSocket(io, socket) {
     io.to(socketId).emit("livekit-token", { token: jwt, identity });
   }
 
+  function nextSinger(room) {
+    const state = songState[room];
+    if (!state) return;
+
+    if (state.currentSinger) return; // 有人在唱就不動
+
+    const next = state.queue.shift();
+    if (!next) {
+      broadcastMicState(room);
+      return;
+    }
+
+    state.currentSinger = next.name;
+    state.currentSingerSocketId = next.socketId;
+
+    // ⭐ 通知他輪到你
+    io.to(next.socketId).emit("yourTurn", {});
+
+    broadcastMicState(room);
+  }
+
   socket.on("joinRoom", ({ room, name }) => {
     if (!songState[room]) songState[room] = { queue: [], currentSinger: null };
 
@@ -47,6 +68,23 @@ export function songSocket(io, socket) {
     });
 
     console.log(`[Debug] ${name} 進入 song room ${room}`);
+  });
+
+  socket.on("joinQueue", ({ room, name }) => {
+    if (!songState[room])
+      songState[room] = { queue: [], currentSinger: null, currentSingerSocketId: null };
+
+    const state = songState[room];
+
+    // 已在 queue 不重複加入
+    if (state.queue.find(u => u.socketId === socket.id)) return;
+
+    state.queue.push({
+      name,
+      socketId: socket.id,
+    });
+
+    broadcastMicState(room);
   });
 
   socket.on("grabMic", async ({ room, singer }) => {
@@ -77,6 +115,7 @@ export function songSocket(io, socket) {
       state.currentSinger = null;
       state.currentSingerSocketId = null;
       broadcastMicState(room); // 全體更新
+      nextSinger(room);
     }
   });
 
@@ -89,6 +128,7 @@ export function songSocket(io, socket) {
         state.currentSinger = null;
         state.currentSingerSocketId = null;
         broadcastMicState(room);
+        nextSinger(room);
       }
 
       // 從 queue 移除自己
