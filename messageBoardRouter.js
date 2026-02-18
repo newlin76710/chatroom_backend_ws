@@ -8,7 +8,7 @@ export const messageBoardRouter = express.Router();
 messageBoardRouter.get("/", authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, content, author_name, author_token, is_private, created_at
+      `SELECT id, content, author_name, author_token, is_private, reply_content, created_at
        FROM message_board
        ORDER BY created_at ASC`
     );
