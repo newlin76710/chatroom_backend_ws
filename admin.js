@@ -78,118 +78,6 @@ adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
   }
 });
 
-/* ================= 發言紀錄 API（搜尋 / 分頁 / target / 最近 2 天） ================= */
-adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
-  try {
-    const user = req.user;
-
-    if (!user || user.level < AML)
-      return res.status(403).json({ error: "權限不足" });
-
-    const {
-      page = 1,
-      pageSize = 50,
-      room,
-      username,
-      keyword,
-      role,
-      mode,
-      target
-    } = req.body;
-
-    const offset = (page - 1) * pageSize;
-
-    const conditions = [`created_at >= NOW() - INTERVAL '2 days'`]; // 🔹 最近 2 天
-    const values = [];
-    let i = 1;
-
-    if (room) {
-      conditions.push(`room = $${i++}`);
-      values.push(room);
-    }
-
-    if (username) {
-      conditions.push(`username = $${i++}`);
-      values.push(username);
-    }
-
-    if (role) {
-      conditions.push(`role = $${i++}`);
-      values.push(role);
-    }
-
-    if (mode) {
-      conditions.push(`mode = $${i++}`);
-      values.push(mode);
-    }
-
-    if (target) {
-      conditions.push(`target = $${i++}`);
-      values.push(target);
-    }
-
-    if (keyword) {
-      conditions.push(`message ILIKE $${i++}`);
-      values.push(`%${keyword}%`);
-    }
-
-    const whereSql = `WHERE ${conditions.join(" AND ")}`;
-
-    // 🔹 使用 username/target 索引快速計算總筆數
-    let total = 0;
-    if (username) {
-      const totalRes = await pool.query(
-        `SELECT SUM(cnt) AS total FROM (
-            SELECT COUNT(*) AS cnt FROM message_logs WHERE username=$1 AND created_at >= NOW() - INTERVAL '2 days'
-            UNION ALL
-            SELECT COUNT(*) AS cnt FROM message_logs WHERE target=$1 AND created_at >= NOW() - INTERVAL '2 days'
-        ) t`,
-        [username]
-      );
-      total = parseInt(totalRes.rows[0].total, 10) || 0;
-    } else {
-      // 無 username 時就算整體條件的筆數
-      const totalRes = await pool.query(
-        `SELECT COUNT(*) FROM message_logs ${whereSql}`,
-        values
-      );
-      total = parseInt(totalRes.rows[0].count, 10);
-    }
-
-    // 資料
-    const dataRes = await pool.query(
-      `
-      SELECT
-        id,
-        room,
-        username,
-        role,
-        message,
-        message_type,
-        mode,
-        target,
-        ip,
-        created_at
-      FROM message_logs
-      ${whereSql}
-      ORDER BY created_at DESC
-      LIMIT $${i++} OFFSET $${i++}
-      `,
-      [...values, pageSize, offset]
-    );
-
-    res.json({
-      page,
-      pageSize,
-      total,
-      logs: dataRes.rows,
-    });
-  } catch (err) {
-    console.error("查詢發言紀錄失敗", err);
-    res.status(500).json({ error: "查詢失敗" });
-  }
-});
-
 /* ================= 使用者等級清單（分頁 / 搜尋 / 過濾訪客 + 最近登入） ================= */
 adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
   try {
@@ -340,34 +228,139 @@ adminRouter.post("/delete-user", authMiddleware, async (req, res) => {
   }
 });
 
-/* ================= 會員查自己的發言（只算最近 2 天） ================= */
-adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
+/* ================= 發言紀錄 API（搜尋 / 分頁 / target / 可選日期 / 預設最近 2 天） ================= */
+adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
-    if (!user)
-      return res.status(401).json({ error: "未登入" });
+
+    if (!user || user.level < AML)
+      return res.status(403).json({ error: "權限不足" });
 
     const {
       page = 1,
       pageSize = 50,
+      room,
+      username,
       keyword,
-      room
+      role,
+      mode,
+      target,
+      from,
+      to
     } = req.body;
 
+    const offset = (page - 1) * pageSize;
+
+    const conditions = [];
+    const values = [];
+    let i = 1;
+
+    // 🔹 日期條件（沒選擇就預設最近 2 天）
+    if (from) {
+      conditions.push(`created_at >= $${i++}`);
+      values.push(from);
+    }
+    if (to) {
+      conditions.push(`created_at <= $${i++}`);
+      values.push(to);
+    }
+    if (!from && !to) {
+      conditions.push(`created_at >= NOW() - INTERVAL '2 days'`);
+    }
+
+    if (room) {
+      conditions.push(`room = $${i++}`);
+      values.push(room);
+    }
+    if (username) {
+      conditions.push(`username = $${i++}`);
+      values.push(username);
+    }
+    if (role) {
+      conditions.push(`role = $${i++}`);
+      values.push(role);
+    }
+    if (mode) {
+      conditions.push(`mode = $${i++}`);
+      values.push(mode);
+    }
+    if (target) {
+      conditions.push(`target = $${i++}`);
+      values.push(target);
+    }
+    if (keyword) {
+      conditions.push(`message ILIKE $${i++}`);
+      values.push(`%${keyword}%`);
+    }
+
+    const whereSql = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    // 總筆數
+    const totalRes = await pool.query(
+      `SELECT COUNT(*) FROM message_logs ${whereSql}`,
+      values
+    );
+    const total = parseInt(totalRes.rows[0].count, 10);
+
+    // 資料
+    const dataRes = await pool.query(
+      `
+      SELECT
+        id,
+        room,
+        username,
+        role,
+        message,
+        message_type,
+        mode,
+        target,
+        ip,
+        created_at
+      FROM message_logs
+      ${whereSql}
+      ORDER BY created_at DESC
+      LIMIT $${i++} OFFSET $${i++}
+      `,
+      [...values, pageSize, offset]
+    );
+
+    res.json({ page, pageSize, total, logs: dataRes.rows });
+  } catch (err) {
+    console.error("查詢發言紀錄失敗", err);
+    res.status(500).json({ error: "查詢失敗" });
+  }
+});
+
+/* ================= 使用者查自己的發言（可選日期 / 預設最近 2 天） ================= */
+adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) return res.status(401).json({ error: "未登入" });
+
+    const { page = 1, pageSize = 50, keyword, room, from, to } = req.body;
     const offset = (page - 1) * pageSize;
 
     const conditions = [`(username = $1 OR target = $1)`];
     const values = [user.username];
     let i = 2;
 
-    // 限制最近 2 天
-    conditions.push(`created_at >= NOW() - INTERVAL '2 days'`);
+    // 🔹 日期條件
+    if (from) {
+      conditions.push(`created_at >= $${i++}`);
+      values.push(from);
+    }
+    if (to) {
+      conditions.push(`created_at <= $${i++}`);
+      values.push(to);
+    }
+    if (!from && !to) {
+      conditions.push(`created_at >= NOW() - INTERVAL '2 days'`);
+    }
 
     if (room) {
       conditions.push(`room = $${i++}`);
       values.push(room);
     }
-
     if (keyword) {
       conditions.push(`message ILIKE $${i++}`);
       values.push(`%${keyword}%`);
@@ -375,17 +368,12 @@ adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
 
     const whereSql = `WHERE ${conditions.join(" AND ")}`;
 
-    // 🔹 使用索引快速計算總筆數（username/target）
+    // 總筆數
     const totalRes = await pool.query(
-      `SELECT SUM(cnt) AS total FROM (
-          SELECT COUNT(*) AS cnt FROM message_logs WHERE username=$1 AND created_at >= NOW() - INTERVAL '2 days'
-          UNION ALL
-          SELECT COUNT(*) AS cnt FROM message_logs WHERE target=$1 AND created_at >= NOW() - INTERVAL '2 days'
-      ) t`,
-      [user.username]
+      `SELECT COUNT(*) FROM message_logs ${whereSql}`,
+      values
     );
-
-    const total = parseInt(totalRes.rows[0].total, 10) || 0;
+    const total = parseInt(totalRes.rows[0].count, 10);
 
     // 資料
     const dataRes = await pool.query(
@@ -408,13 +396,7 @@ adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
       [...values, pageSize, offset]
     );
 
-    res.json({
-      page,
-      pageSize,
-      total,
-      logs: dataRes.rows,
-    });
-
+    res.json({ page, pageSize, total, logs: dataRes.rows });
   } catch (err) {
     console.error("查詢自己的發言失敗", err);
     res.status(500).json({ error: "查詢失敗" });
