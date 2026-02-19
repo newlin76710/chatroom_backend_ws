@@ -114,6 +114,23 @@ export function songSocket(io, socket) {
     await sendLiveKitToken(socket.id, room, singer);
   });
 
+  socket.on("adminMoveQueue", ({ room, fromIndex, toIndex }) => {
+    const state = songState[room];
+    if (!state) return;
+
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= state.queue.length ||
+      toIndex >= state.queue.length
+    ) return;
+
+    const item = state.queue.splice(fromIndex, 1)[0];
+    state.queue.splice(toIndex, 0, item);
+
+    broadcastMicState(room);
+  });
+
   socket.on("forceStopSinger", ({ room, singer }) => {
     const state = songState[room];
     if (!state) return;
