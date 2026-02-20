@@ -52,7 +52,6 @@ async function logMessage({ room, username, role, message, mode = "public", targ
 }
 // Socket.io 聊天邏輯
 export function chatHandlers(io, socket) {
-
     // --- 進入房間 ---
     socket.on("joinRoom", async ({ room, user }) => {
         const state = getRoomState(room);
@@ -85,25 +84,29 @@ export function chatHandlers(io, socket) {
         // 更新 socket.data
         socket.data = { room, name, level, exp, gender, avatar, type };
 
-        // 🔥 後登入踢掉前登入
-        const existingUser = rooms[room].find(u => u.name === name);
-        if (existingUser && existingUser.socketId !== socket.id) {
-            const oldSocket = io.sockets.sockets.get(existingUser.socketId);
-            if (oldSocket) {
-                oldSocket.emit("forceLogout", { reason: `你的帳號被 ${name} 取代` });
-                oldSocket.disconnect(true);
+        // 🔥 用 token 判斷真正雙開
+        if (token) {
+            const existing = ioTokens.get(token);
+            if (existing && existing.socketId !== socket.id) {
+                const oldSocket = io.sockets.sockets.get(existing.socketId);
+                if (oldSocket) {
+                    oldSocket.emit("forceLogout", {
+                        reason: "帳號已在其他地方登入"
+                    });
+                    oldSocket.disconnect(true);
+                }
             }
-            // 移除舊使用者
-            rooms[room] = rooms[room].filter(u => u.name !== name);
-            const oldTokenEntry = [...ioTokens.entries()].find(([t, d]) => d.username === name);
-            if (oldTokenEntry) ioTokens.delete(oldTokenEntry[0]);
+            // 更新 token 綁定
+            ioTokens.set(token, {
+                username: name,
+                socketId: socket.id
+            });
         }
 
         // 加入或更新房間列表
         rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gender, avatar });
 
         onlineUsers.set(name, Date.now());
-        ioTokens.set(token, { username: name, socketId: socket.id });
 
         // 加入 AI（如果沒加入過）
         aiNames.forEach(ai => {

@@ -190,7 +190,7 @@ setInterval(() => {
   const now = Date.now();
 
   for (const [name, last] of onlineUsers.entries()) {
-    if (now - last > 2 * 60 * 1000) { // 2分鐘沒 heartbeat
+    if (now - last > 5 * 60 * 1000) { // 5分鐘沒 heartbeat
       onlineUsers.delete(name);
       console.log("🧹 假在線移除:", name);
 
@@ -215,4 +215,5 @@ const port = process.env.PORT || 10000;
 
 server.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
+  console.log("Server started at:", new Date());
 });
