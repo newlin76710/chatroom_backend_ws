@@ -56,7 +56,7 @@ export function chatHandlers(io, socket) {
     socket.on("joinRoom", async ({ room, user }) => {
         const state = getRoomState(room);
         socket.join(room);
-        console.log("🟢 join", room, socket.id);
+        
         if (!rooms[room]) rooms[room] = [];
 
         let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
@@ -80,7 +80,7 @@ export function chatHandlers(io, socket) {
         } catch (err) {
             console.error("joinRoom取得使用者資料錯誤：", err);
         }
-
+        console.log("🟢 join", room, socket.id, name);
         // 更新 socket.data
         socket.data = { room, name, level, exp, gender, avatar, type };
 
@@ -94,6 +94,7 @@ export function chatHandlers(io, socket) {
                         reason: "帳號已在其他地方登入"
                     });
                     oldSocket.disconnect(true);
+                    console.log("forceLogout", room, socket.id, name);
                 }
             }
             // 更新 token 綁定
@@ -329,6 +330,7 @@ export function chatHandlers(io, socket) {
             }
             io.to(room).emit("systemMessage", `${name} 離開聊天室`);
             io.to(room).emit("updateUsers", rooms[room]);
+            console.log("leave", room, socket.id, name);
         }
         if (!name) return;
         onlineUsers.delete(name);

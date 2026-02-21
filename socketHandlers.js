@@ -189,6 +189,7 @@ export function songSocket(io, socket) {
 
       // 從 queue 移除自己
       state.queue = state.queue.filter(u => u.socketId !== socket.id);
+      console.log(`[Debug] 斷線: ${socket.id} in room ${room}`);
     }
   });
 
