@@ -20,6 +20,9 @@ function getNicknameLength(str = "") {
 function isNicknameTooLong(username) {
   return getNicknameLength(username) > 12;
 }
+function isNicknameTooShort(username) {
+  return getNicknameLength(username) < 3;
+}
 
 /* ================= 工具 ================= */
 function getClientIP(req) {
@@ -100,6 +103,11 @@ authRouter.post("/guest", async (req, res) => {
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
         error: "暱稱最多 6 個中文字 或 12 個英數字",
+      });
+    }
+    if (isNicknameTooShort(username)) {
+      return res.status(400).json({
+        error: "暱稱最少 3 個英數字 或 2 個中文字"
       });
     }
     if (!isValidNickname(username)) {
@@ -191,11 +199,28 @@ authRouter.post("/guest", async (req, res) => {
 
 // 註冊
 authRouter.post("/register", async (req, res) => {
+  const ip = getClientIP(req);
   try {
+    // 查此 IP 註冊過幾個帳號
+    const ipCount = await pool.query(
+      `SELECT COUNT(*) FROM users WHERE register_ip = $1`,
+      [ip]
+    );
+
+    if (parseInt(ipCount.rows[0].count) > 5) {
+      return res.status(400).json({
+        error: "同一 IP 最多只能註冊 5 個帳號"
+      });
+    }
     const { username, password, gender, phone, email, avatar } = req.body;
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
         error: "暱稱最多 6 個中文字 或 12 個英數字",
+      });
+    }
+    if (isNicknameTooShort(username)) {
+      return res.status(400).json({
+        error: "暱稱最少 3 個英數字 或 2 個中文字"
       });
     }
     if (!isValidNickname(username)) {
@@ -237,6 +262,11 @@ authRouter.post("/login", async (req, res) => {
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
         error: "暱稱最多 6 個中文字 或 12 個英數字",
+      });
+    }
+    if (isNicknameTooShort(username)) {
+      return res.status(400).json({
+        error: "暱稱最少 3 個英數字 或 2 個中文字"
       });
     }
     if (!isValidNickname(username)) {
@@ -299,6 +329,7 @@ authRouter.post("/login", async (req, res) => {
         if (socket) {
           socket.emit("forceLogout", { reason: "你的帳號在其他地方登入" });
           socket.disconnect(true);
+          console.log("帳號在其他地方登入", username);
         }
         // 移除舊 token
         ioTokens.delete(oldToken);
@@ -309,7 +340,7 @@ authRouter.post("/login", async (req, res) => {
 
     // 將使用者標記為線上（記憶體）
     onlineUsers.set(username, Date.now());
-    ioTokens.set(token, {username, socketId: null}); // token → username 映射
+    ioTokens.set(token, { username, socketId: null }); // token → username 映射
 
     await logLogin({ userId: user.id, username: user.username, loginType: "normal", ip, userAgent, success: true });
 
@@ -363,6 +394,11 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
         error: "暱稱最多 6 個中文字 或 12 個英數字",
+      });
+    }
+    if (isNicknameTooShort(username)) {
+      return res.status(400).json({
+        error: "暱稱最少 3 個英數字 或 2 個中文字"
       });
     }
     if (!isValidNickname(username)) {
