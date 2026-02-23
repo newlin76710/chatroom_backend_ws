@@ -207,7 +207,7 @@ authRouter.post("/register", async (req, res) => {
       [ip]
     );
 
-    if (parseInt(ipCount.rows[0].count) > 5) {
+    if (parseInt(ipCount.rows[0].count) >= 5) {
       return res.status(400).json({
         error: "同一 IP 最多只能註冊 5 個帳號"
       });
