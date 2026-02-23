@@ -57,7 +57,7 @@ export function chatHandlers(io, socket) {
         const state = getRoomState(room);
         const ip = getClientIP(socket);
         socket.join(room);
-        
+
         if (!rooms[room]) rooms[room] = [];
 
         let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
@@ -107,7 +107,20 @@ export function chatHandlers(io, socket) {
         }
 
         // 加入或更新房間列表
-        rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gender, avatar });
+        const exists = rooms[room].find(u => u.name === name);
+        if (!exists) {
+            rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gender, avatar });
+        } else {
+            // 如果已存在，更新 socketId 或其他資訊
+            exists.id = socket.id;
+            exists.socketId = socket.id;
+            exists.level = level;
+            exists.exp = exp;
+            exists.gender = gender;
+            exists.avatar = avatar;
+            exists.type = type;
+            console.log("重複登入", room, socket.id, name);
+        }
 
         onlineUsers.set(name, Date.now());
         addUserIP(ip, name);
