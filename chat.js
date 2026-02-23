@@ -147,6 +147,23 @@ export function chatHandlers(io, socket) {
         // ⭐ 加上 ip
         const ip = getClientIP(socket);
         const msgPayload = { user, message, target: target || "", mode, color, ip };
+        // 廣播訊息
+        if (mode === "private" && target) {
+            const sockets = Array.from(io.sockets.sockets.values());
+            sockets.forEach(s => {
+                // 私聊對象收到訊息
+                if (s.data?.name === target || s.data?.name === user.name) {
+                    s.emit("message", msgPayload);
+                }
+                // ⭐ Lv.99 監控私聊
+                else if (Number(s.data?.level) === Number(AML)) {
+                    s.emit("message", { ...msgPayload, monitored: true });
+                }
+            });
+        } else {
+            // 公聊直接廣播
+            io.to(room).emit("message", msgPayload);
+        }
 
         // 更新 EXP / LV
         try {
@@ -177,24 +194,6 @@ export function chatHandlers(io, socket) {
             }
         } catch (err) {
             console.error("更新 EXP/LV/使用者資料 失敗：", err);
-        }
-
-        // 廣播訊息
-        if (mode === "private" && target) {
-            const sockets = Array.from(io.sockets.sockets.values());
-            sockets.forEach(s => {
-                // 私聊對象收到訊息
-                if (s.data?.name === target || s.data?.name === user.name) {
-                    s.emit("message", msgPayload);
-                }
-                // ⭐ Lv.99 監控私聊
-                else if (Number(s.data?.level) === Number(AML)) {
-                    s.emit("message", { ...msgPayload, monitored: true });
-                }
-            });
-        } else {
-            // 公聊直接廣播
-            io.to(room).emit("message", msgPayload);
         }
 
         // ⭐ 寫入 DB（使用者）
