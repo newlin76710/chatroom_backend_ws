@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { pool } from "./db.js";
 import { logLogin } from "./loginLogger.js";
 import { onlineUsers } from "./chat.js";
+import { addUserIP, removeUserIP } from "./ip.js";
 
 export const authRouter = express.Router();
 export const ioTokens = new Map();
@@ -157,6 +158,12 @@ authRouter.post("/guest", async (req, res) => {
       return res.status(400).json({ error: "暱稱正在使用" });
     }
 
+    if (!addUserIP(ip, guestName)) {
+      return res.status(400).json({
+        error: "同一 IP 最多只能登入 5 個帳號"
+      });
+    }
+
     const now = new Date();
     const guestToken = crypto.randomUUID();
     const randomPassword = crypto.randomBytes(8).toString("hex");
@@ -178,7 +185,7 @@ authRouter.post("/guest", async (req, res) => {
 
     // 🔹 記憶體標記為線上
     onlineUsers.set(guestName, Date.now());
-    ioTokens.set(guestToken, { username: guestName, socketId: null });
+    ioTokens.set(guestToken, { username: guestName, socketId: null, ip });
 
     await logLogin({ userId: guest.id, username: guest.username, loginType: "guest", ip, userAgent, success: true });
 
@@ -199,19 +206,8 @@ authRouter.post("/guest", async (req, res) => {
 
 // 註冊
 authRouter.post("/register", async (req, res) => {
-  const ip = getClientIP(req);
   try {
-    // 查此 IP 註冊過幾個帳號
-    const ipCount = await pool.query(
-      `SELECT COUNT(*) FROM users WHERE register_ip = $1`,
-      [ip]
-    );
-
-    if (parseInt(ipCount.rows[0].count) >= 5) {
-      return res.status(400).json({
-        error: "同一 IP 最多只能註冊 5 個帳號"
-      });
-    }
+    const ip = getClientIP(req);
     const { username, password, gender, phone, email, avatar } = req.body;
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
@@ -274,6 +270,7 @@ authRouter.post("/login", async (req, res) => {
         error: "暱稱只能包含中文、英文或數字，不能包含符號"
       });
     }
+
     // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
       await logLogin({
@@ -338,9 +335,15 @@ authRouter.post("/login", async (req, res) => {
       onlineUsers.delete(username);
     }
 
+    if (!addUserIP(ip, username)) {
+      return res.status(400).json({
+        error: "同一 IP 最多只能登入 5 個帳號"
+      });
+    }
+
     // 將使用者標記為線上（記憶體）
     onlineUsers.set(username, Date.now());
-    ioTokens.set(token, { username, socketId: null }); // token → username 映射
+    ioTokens.set(token, { username, socketId: null, ip }); // token → username 映射
 
     await logLogin({ userId: user.id, username: user.username, loginType: "normal", ip, userAgent, success: true });
 
@@ -372,6 +375,7 @@ authRouter.post("/logout", async (req, res) => {
       if (data.username === username) ioTokens.delete(token);
     }
     onlineUsers.delete(username);
+    removeUserIP(ip, username);
     await logLogin({ username, loginType: "logout", ip, userAgent, success: true });
 
     res.json({ success: true, message: `${username} 已登出` });

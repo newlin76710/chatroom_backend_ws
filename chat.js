@@ -3,7 +3,7 @@ import { callAI, aiNames, aiProfiles } from "./ai.js";
 import { expForNextLevel } from "./utils.js";
 import { songState } from "./song.js";
 import { ioTokens } from "./auth.js";
-
+import { addUserIP, removeUserIP } from "./ip.js";
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
 const ANL = process.env.ADMIN_MIN_LEVEL || 91;
 const OPENAI = process.env.OPENAI === "true"
@@ -55,6 +55,7 @@ export function chatHandlers(io, socket) {
     // --- 進入房間 ---
     socket.on("joinRoom", async ({ room, user }) => {
         const state = getRoomState(room);
+        const ip = getClientIP(socket);
         socket.join(room);
         
         if (!rooms[room]) rooms[room] = [];
@@ -100,7 +101,8 @@ export function chatHandlers(io, socket) {
             // 更新 token 綁定
             ioTokens.set(token, {
                 username: name,
-                socketId: socket.id
+                socketId: socket.id,
+                ip
             });
         }
 
@@ -108,6 +110,7 @@ export function chatHandlers(io, socket) {
         rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gender, avatar });
 
         onlineUsers.set(name, Date.now());
+        addUserIP(ip, name);
 
         // 加入 AI（如果沒加入過）
         aiNames.forEach(ai => {
@@ -316,7 +319,7 @@ export function chatHandlers(io, socket) {
         if (!room || !rooms[room]) return;
 
         const wasInRoom = rooms[room].some(u => u.id === socket.id);
-
+        const ip = getClientIP(socket);
         rooms[room] = rooms[room].filter(u => u.id !== socket.id);
         socket.leave(room);
 
@@ -333,6 +336,7 @@ export function chatHandlers(io, socket) {
         }
         if (!name) return;
         onlineUsers.delete(name);
+        removeUserIP(ip, name)
     };
 
     socket.on("leaveRoom", removeUser);

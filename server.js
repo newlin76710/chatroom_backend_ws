@@ -7,7 +7,7 @@ import path from "path";
 import fs from "fs";
 import fetch from "node-fetch";
 import { AccessToken } from "livekit-server-sdk";
-
+import { removeUserIP } from "./ip.js";
 import { pool } from "./db.js";
 import { adminRouter } from "./admin.js";
 import { authRouter, ioTokens } from "./auth.js";
@@ -199,6 +199,7 @@ setInterval(() => {
         if (data.username === name) {
           ioTokens.delete(token);
           console.log("🧹 對應 token 移除:", token);
+          removeUserIP(data.ip, name);
         }
       }
     }
