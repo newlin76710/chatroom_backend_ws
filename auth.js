@@ -239,10 +239,10 @@ authRouter.post("/register", async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      `INSERT INTO users (username, password, gender, phone, email, avatar, level, exp)
-       VALUES ($1, $2, $3, $4, $5, $6, 2, 0)
+      `INSERT INTO users (username, password, gender, phone, email, avatar, level, exp, register_ip)
+       VALUES ($1, $2, $3, $4, $5, $6, 2, 0, $7)
        RETURNING id, username, gender, avatar, level, exp`,
-      [username, hash, gender === "男" ? "男" : "女", phone || null, email || null, avatar || null]
+      [username, hash, gender === "男" ? "男" : "女", phone || null, email || null, avatar || null, ip || null]
     );
 
     res.json({ message: "註冊成功", user: result.rows[0] });
