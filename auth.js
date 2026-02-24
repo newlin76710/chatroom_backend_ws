@@ -6,6 +6,7 @@ import { logLogin } from "./loginLogger.js";
 import { onlineUsers } from "./chat.js";
 import { addUserIP, removeUserIP } from "./ip.js";
 
+const ROOM = process.env.ROOMNAME || 'windsong';
 export const authRouter = express.Router();
 export const ioTokens = new Map();
 const fullWidthRegex = /[^\u0000-\u00ff]/;
@@ -37,8 +38,8 @@ function getClientIP(req) {
 async function isIPBlocked(ip) {
   try {
     const result = await pool.query(
-      `SELECT 1 FROM blocked_ips WHERE ip=$1 LIMIT 1`,
-      [ip]
+      `SELECT 1 FROM blocked_ips WHERE ip=$1 and room = $2 LIMIT 1`,
+      [ip, ROOM]
     );
     return result.rowCount > 0;
   } catch (err) {
@@ -54,9 +55,10 @@ async function isNicknameBlocked(username) {
       SELECT nickname
       FROM blocked_nicknames
       WHERE $1 ILIKE '%' || nickname || '%'
+      AND room = $2
       LIMIT 1
       `,
-      [username]
+      [username, ROOM]
     );
     return result.rowCount > 0;
   } catch (err) {
@@ -70,23 +72,46 @@ async function isNicknameBlocked(username) {
 const isValidNickname = (name) => /^[\u4e00-\u9fa5a-zA-Z0-9]+$/.test(name);
 
 
-/* ================= 驗證 Middleware ================= */
+/* ================= 驗證 Middleware（room-based） ================= */
 export const authMiddleware = async (req, res, next) => {
   try {
     const token = req.headers["authorization"]?.split(" ")[1] || req.body.token;
     if (!token) return res.status(401).json({ error: "No token provided" });
+
     const data = ioTokens.get(token);
-    if (!data) return res.status(401).json({ error: "Invalid username token" });
+    if (!data) return res.status(401).json({ error: "Invalid token" });
+
     const username = data.username;
-    const result = await pool.query(
-      `SELECT id, username, level, exp, gender, avatar, account_type 
-       FROM users WHERE username=$1`,
+    const room = req.body.room || ROOM; // 🔹 從 body 拿 room 或用預設 ROOM
+
+    // 先抓 users
+    const userRes = await pool.query(
+      `SELECT id, username, gender, avatar, account_type
+       FROM users
+       WHERE username=$1`,
       [username]
     );
+    if (!userRes.rowCount) return res.status(401).json({ error: "Invalid token" });
 
-    if (!result.rowCount) return res.status(401).json({ error: "Invalid token" });
+    const user = userRes.rows[0];
 
-    req.user = result.rows[0];
+    // 再抓 user_room_stats 該 room 的等級/經驗
+    const statsRes = await pool.query(
+      `SELECT level, exp
+       FROM user_room_stats
+       WHERE user_id=$1 AND room=$2`,
+      [user.id, room]
+    );
+
+    const stats = statsRes.rowCount ? statsRes.rows[0] : { level: 1, exp: 0 };
+
+    req.user = {
+      ...user,
+      level: stats.level,
+      exp: stats.exp,
+      room
+    };
+
     next();
   } catch (err) {
     console.error("authMiddleware error:", err);
@@ -271,7 +296,6 @@ authRouter.post("/login", async (req, res) => {
       });
     }
 
-    // IP 黑名單檢查
     if (await isIPBlocked(ip)) {
       await logLogin({
         username: username || "-",
@@ -284,7 +308,6 @@ authRouter.post("/login", async (req, res) => {
       return res.status(403).json({ error: "你的 IP 已被封鎖，無法登入" });
     }
 
-    // 暱稱黑名單檢查
     if (await isNicknameBlocked(username)) {
       await logLogin({
         username: username || "-",
@@ -301,7 +324,7 @@ authRouter.post("/login", async (req, res) => {
 
     // 從資料庫取得帳號資訊（密碼、基本資料）
     const result = await pool.query(
-      `SELECT id, username, password, level, exp, avatar, gender 
+      `SELECT id, username, password, avatar, gender 
        FROM users WHERE username=$1`,
       [username]
     );
@@ -312,26 +335,43 @@ authRouter.post("/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ error: "密碼錯誤" });
 
+    // ====== 處理聊天室等級/經驗 ======
+    const room = ROOM; // 或者 req.body.room
+    let statsRes = await pool.query(
+      `SELECT level, exp FROM user_room_stats WHERE user_id=$1 AND room=$2`,
+      [user.id, room]
+    );
+
+    let level, exp;
+    if (!statsRes.rowCount) {
+      // 如果沒有該聊天室紀錄，給預設 2 等 0 exp
+      level = 2;
+      exp = 0;
+      await pool.query(
+        `INSERT INTO user_room_stats (user_id, username, room, level, exp) VALUES ($1,$2,$3,$4,$5)`,
+        [user.id, user.username, room, level, exp]
+      );
+    } else {
+      level = statsRes.rows[0].level;
+      exp = statsRes.rows[0].exp;
+    }
+
     const now = new Date();
     const token = crypto.randomUUID();
 
     // 🔹 記憶體判斷是否已在線
     if (onlineUsers.has(username)) {
-      // 找出對應的舊 token
       const oldEntry = [...ioTokens.entries()].find(([t, data]) => data.username === username);
       if (oldEntry) {
         const [oldToken, { socketId }] = oldEntry;
-        // 嘗試通知舊 socket 斷線
         const socket = req.app.get("io").sockets.sockets.get(socketId);
         if (socket) {
           socket.emit("forceLogout", { reason: "你的帳號在其他地方登入" });
           socket.disconnect(true);
           console.log("帳號在其他地方登入", username);
         }
-        // 移除舊 token
         ioTokens.delete(oldToken);
       }
-      // 移除線上狀態
       onlineUsers.delete(username);
     }
 
@@ -341,27 +381,26 @@ authRouter.post("/login", async (req, res) => {
       });
     }
 
-    // 將使用者標記為線上（記憶體）
     onlineUsers.set(username, Date.now());
-    ioTokens.set(token, { username, socketId: null, ip }); // token → username 映射
+    ioTokens.set(token, { username, socketId: null, ip });
 
     await logLogin({ userId: user.id, username: user.username, loginType: "normal", ip, userAgent, success: true });
 
     res.json({
       token,
       name: user.username,
-      level: user.level,
-      exp: user.exp,
+      level,
+      exp,
       gender: user.gender,
       avatar: user.avatar,
       last_login: now,
+      room
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "登入失敗" });
   }
 });
-
 
 /* ================= 登出 ================= */
 authRouter.post("/logout", async (req, res) => {

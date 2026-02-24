@@ -6,6 +6,7 @@ import { ioTokens } from "./auth.js";
 import { addUserIP, removeUserIP } from "./ip.js";
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
 const ANL = process.env.ADMIN_MIN_LEVEL || 91;
+
 const OPENAI = process.env.OPENAI === "true"
 export const rooms = {};
 export const roomContext = {};
@@ -66,8 +67,15 @@ export function chatHandlers(io, socket) {
         let token = user.token || "";
         try {
             const res = await pool.query(
-                `SELECT username, level, exp, gender, avatar FROM users WHERE username=$1`,
-                [user.name]
+                `
+                SELECT u.username, u.gender, u.avatar,
+                    urs.level, urs.exp
+                FROM users u
+                LEFT JOIN user_room_stats urs
+                ON u.id = urs.user_id AND urs.room = $2
+                WHERE u.username = $1
+                `,
+                [user.name, room]
             );
             const dbUser = res.rows[0];
             if (dbUser) {
@@ -192,8 +200,15 @@ export function chatHandlers(io, socket) {
         // 更新 EXP / LV
         try {
             const res = await pool.query(
-                `SELECT id, level, exp, gender, avatar, account_type FROM users WHERE username=$1`,
-                [user.name]
+                `
+                SELECT u.id, urs.level, urs.exp, u.gender, u.avatar, u.account_type
+                FROM users u
+                JOIN user_room_stats urs
+                ON u.id = urs.user_id
+                WHERE u.username = $1
+                AND urs.room = $2
+                `,
+                [user.name, room]
             );
             const dbUser = res.rows[0];
             if (dbUser) {
@@ -203,7 +218,14 @@ export function chatHandlers(io, socket) {
                     exp -= expForNextLevel(level);
                     level += 1;
                 }
-                await pool.query(`UPDATE users SET level=$1, exp=$2 WHERE id=$3`, [level, exp, dbUser.id]);
+                await pool.query(
+                    `
+                    UPDATE user_room_stats
+                    SET level = $1, exp = $2
+                    WHERE user_id = $3 AND room = $4
+                    `,
+                    [level, exp, dbUser.id, room]
+                );
                 if (rooms[room]) {
                     const roomUser = rooms[room].find(u => u.name === user.name);
                     if (roomUser) {

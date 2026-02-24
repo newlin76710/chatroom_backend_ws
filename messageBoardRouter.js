@@ -3,14 +3,15 @@ import { pool } from "./db.js";
 import { authMiddleware } from "./auth.js";
 
 const AML = process.env.ADMIN_MAX_LEVEL || 99; // 版主等級門檻
+const ROOM = process.env.ROOMNAME || 'windsong';
 export const messageBoardRouter = express.Router();
 
 messageBoardRouter.get("/", authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, content, author_name, author_token, is_private, reply_content, created_at
-       FROM message_board
-       ORDER BY created_at ASC`
+       FROM message_board where room = $1
+       ORDER BY created_at ASC`, [ROOM]
     );
 
     // 全部送前端，不過保留 is_private 欄位
@@ -33,10 +34,10 @@ messageBoardRouter.post("/create", authMiddleware, async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO message_board (content, is_private, author_name, author_token, created_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO message_board (content, is_private, author_name, author_token, created_at, room)
+       VALUES ($1, $2, $3, $4, NOW(), $5)
        RETURNING id`,
-      [content, !!isPrivate, username, token]
+      [content, !!isPrivate, username, token, ROOM]
     );
 
     res.json({ success: true, id: result.rows[0].id });

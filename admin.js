@@ -5,6 +5,7 @@ import { authMiddleware } from "./auth.js"; // 驗證 token 並填 req.user
 
 export const adminRouter = express.Router();
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
+const ROOM = process.env.ROOMNAME || 'windsong';
 
 /* ================= 登入紀錄 API（支援分頁 / 日期） ================= */
 adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
@@ -36,6 +37,9 @@ adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
       conditions.push(`login_at <= $${i++}`);
       values.push(to);
     }
+
+    conditions.push(`room = $${i++}`);
+    values.push(ROOM);
 
     const whereSql =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -92,38 +96,46 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
       pageSize = 20
     } = req.body;
 
-    const values = [];
-    let where = "WHERE u.account_type = 'account'";
+    const values = [ROOM];
+    let where = "WHERE s.room = $1";
 
     if (keyword) {
-      where += " AND u.username ILIKE $1";
+      where += ` AND u.username ILIKE $${values.length + 1}`;
       values.push(`%${keyword}%`);
     }
 
     const offset = (page - 1) * pageSize;
 
-    // 總筆數
+    // 🔹 總筆數
     const totalRes = await pool.query(
-      `SELECT COUNT(*) FROM users u ${where}`,
+      `
+      SELECT COUNT(*)
+      FROM user_room_stats s
+      JOIN users u ON s.user_id = u.id
+      ${where}
+      `,
       values
     );
+
     const total = parseInt(totalRes.rows[0].count, 10);
 
-    // 使用者資料 + 最近登入
+    // 🔹 使用者資料 + 最近登入
     const dataRes = await pool.query(
       `
       SELECT 
         u.id,
         u.username,
-        u.level,
+        s.level,
+        s.exp,
         u.created_at,
         MAX(l.login_at) AS last_login_at
-      FROM users u
+      FROM user_room_stats s
+      JOIN users u ON s.user_id = u.id
       LEFT JOIN login_logs l
         ON u.username = l.username
       ${where}
-      GROUP BY u.id
-      ORDER BY u.level DESC, u.created_at ASC
+      GROUP BY u.id, s.level, s.exp
+      ORDER BY s.level DESC, s.exp DESC, u.created_at ASC
       LIMIT $${values.length + 1} OFFSET $${values.length + 2}
       `,
       [...values, pageSize, offset]
@@ -135,6 +147,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
       total,
       users: dataRes.rows,
     });
+
   } catch (err) {
     console.error("查詢使用者等級失敗", err);
     res.status(500).json({ error: "查詢失敗" });
@@ -156,72 +169,96 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
     if (username === admin.username)
       return res.status(400).json({ error: "不能修改自己的等級" });
 
+    // 🔹 先找到 user_id
     const targetRes = await pool.query(
-      `SELECT id, level FROM users WHERE username = $1`,
+      `SELECT id FROM users WHERE username = $1`,
       [username]
     );
 
     if (!targetRes.rows.length)
       return res.status(404).json({ error: "使用者不存在" });
 
+    const userId = targetRes.rows[0].id;
+
     if (level > admin.level)
       return res.status(400).json({ error: "不能設定高於自己的等級" });
 
+    // 🔥 更新指定 ROOM 的等級
     await pool.query(
-      `UPDATE users SET level = $1 WHERE username = $2`,
-      [level, username]
+      `
+      UPDATE user_room_stats
+      SET level = $1
+      WHERE user_id = $2 AND room = $3
+      `,
+      [level, userId, ROOM]
     );
 
     res.json({ success: true });
+
   } catch (err) {
     console.error("調整使用者等級失敗", err);
     res.status(500).json({ error: "操作失敗" });
   }
 });
 
-/* ================= 刪除使用者（硬刪除） ================= */
+/* ================= 刪除使用者（僅刪除當前聊天室等級） ================= */
 adminRouter.post("/delete-user", authMiddleware, async (req, res) => {
   const client = await pool.connect();
+
   try {
     const admin = req.user;
-    const { username } = req.body;
+    const { username, room } = req.body;
 
     if (!admin || admin.level < AML)
       return res.status(403).json({ error: "權限不足" });
 
-    if (!username)
-      return res.status(400).json({ error: "缺少 username" });
+    if (!username || !room)
+      return res.status(400).json({ error: "缺少參數" });
 
     if (username === admin.username)
       return res.status(400).json({ error: "不能刪除自己" });
 
     await client.query("BEGIN");
 
-    // 先確認目標使用者存在 & 等級
+    // 取得目標使用者該聊天室等級
     const targetRes = await client.query(
-      `SELECT id, level FROM users WHERE username = $1`,
-      [username]
+      `
+      SELECT urs.level
+      FROM user_room_stats urs
+      JOIN users u ON u.id = urs.user_id
+      WHERE u.username = $1
+        AND urs.room = $2
+      `,
+      [username, room]
     );
 
     if (!targetRes.rows.length)
-      throw new Error("使用者不存在");
+      throw new Error("使用者在此聊天室不存在");
 
     const target = targetRes.rows[0];
 
     if (target.level > admin.level)
       throw new Error("不能刪除等級更高的使用者");
 
-    // 🔥 刪除 users
+    // 🔥 只刪除該聊天室資料
     await client.query(
-      `DELETE FROM users WHERE username = $1`,
-      [username]
+      `
+      DELETE FROM user_room_stats
+      USING users
+      WHERE user_room_stats.user_id = users.id
+        AND users.username = $1
+        AND user_room_stats.room = $2
+      `,
+      [username, room]
     );
 
     await client.query("COMMIT");
+
     res.json({ success: true });
+
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("刪除使用者失敗", err);
+    console.error("刪除聊天室等級失敗", err);
     res.status(400).json({ error: err.message || "刪除失敗" });
   } finally {
     client.release();
@@ -293,6 +330,9 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
       values.push(`%${keyword}%`);
     }
 
+    conditions.push(`room = $${i++}`);
+    values.push(ROOM);
+
     const whereSql = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
     // 總筆數
@@ -357,14 +397,13 @@ adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
       conditions.push(`created_at >= NOW() - INTERVAL '2 days'`);
     }
 
-    if (room) {
-      conditions.push(`room = $${i++}`);
-      values.push(room);
-    }
     if (keyword) {
       conditions.push(`message ILIKE $${i++}`);
       values.push(`%${keyword}%`);
     }
+
+    conditions.push(`room = $${i++}`);
+    values.push(ROOM);
 
     const whereSql = `WHERE ${conditions.join(" AND ")}`;
 

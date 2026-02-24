@@ -3,7 +3,7 @@ import { pool } from "./db.js";
 
 export const nicknameRouter = express.Router();
 const AML = process.env.ADMIN_MIN_LEVEL || 91;
-
+const ROOM = process.env.ROOMNAME || 'windsong';
 /**
  * middleware — 限制 91~99
  * 假設 req.user 已經被 authMiddleware 注入
@@ -27,9 +27,9 @@ nicknameRouter.get("/", adminOnly, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT *
-      FROM blocked_nicknames
+      FROM blocked_nicknames where room = $1
       ORDER BY created_at DESC
-    `);
+    `, [ROOM]);
 
     res.json(result.rows);
   } catch (err) {
@@ -57,8 +57,8 @@ nicknameRouter.post("/block", adminOnly, async (req, res) => {
 
     // 查出該暱稱的使用者等級（如果有）
     const userRes = await pool.query(
-      `SELECT level FROM users WHERE username=$1`,
-      [trimmedNickname]
+      `SELECT level FROM user_room_stats WHERE username=$1 and room=$2`,
+      [trimmedNickname, ROOM]
     );
 
     if (userRes.rows.length) {
@@ -75,8 +75,8 @@ nicknameRouter.post("/block", adminOnly, async (req, res) => {
     // 封鎖暱稱
     const result = await pool.query(
       `
-      INSERT INTO blocked_nicknames (nickname, reason, executor)
-      VALUES ($1, $2, $3)
+      INSERT INTO blocked_nicknames (nickname, reason, executor, room)
+      VALUES ($1, $2, $3, $4)
       ON CONFLICT (nickname)
       DO UPDATE
       SET
@@ -85,7 +85,7 @@ nicknameRouter.post("/block", adminOnly, async (req, res) => {
         created_at = NOW()
       RETURNING *
       `,
-      [trimmedNickname, reason || null, executor || req.user.username]
+      [trimmedNickname, reason || null, executor || req.user.username, ROOM]
     );
 
     res.json({

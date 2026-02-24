@@ -3,6 +3,7 @@ import { pool } from "./db.js";
 import { authMiddleware } from "./auth.js";
 
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
+const ROOM = process.env.ROOMNAME || 'windsong';
 export const announcementRouter = express.Router();
 
 /* ===== 取得公告（所有人） ===== */
@@ -10,9 +11,9 @@ announcementRouter.get("/", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, title, content, updated_by, updated_at
-       FROM announcements
+       FROM announcements where room = $1
        ORDER BY id ASC
-       LIMIT 10`
+       LIMIT 10`, [ROOM]
     );
     // 如果沒有公告，回傳空陣列
     res.json(result.rows || []);
@@ -63,16 +64,16 @@ announcementRouter.post("/create", authMiddleware, async (req, res) => {
     }
 
     // 檢查目前公告數量
-    const countResult = await pool.query(`SELECT COUNT(*) FROM announcements`);
+    const countResult = await pool.query(`SELECT COUNT(*) FROM announcements where room = $1`, [ROOM]);
     const count = parseInt(countResult.rows[0].count);
     if (count >= 10) {
       return res.status(400).json({ error: "公告已達上限 10 則" });
     }
 
     const insert = await pool.query(
-      `INSERT INTO announcements (title, content, updated_by, updated_at)
-       VALUES ($1, $2, $3, NOW()) RETURNING id`,
-      [title, content, username]
+      `INSERT INTO announcements (title, content, updated_by, updated_at, room)
+       VALUES ($1, $2, $3, NOW(), $4) RETURNING id`,
+      [title, content, username, ROOM]
     );
 
     res.json({ success: true, id: insert.rows[0].id });

@@ -1,12 +1,12 @@
 import express from "express";
 import { pool } from "./db.js";
-
+const ROOM = process.env.ROOMNAME || 'windsong';
 export const ipRouter = express.Router();
 
 // 取得所有被封鎖 IP
 ipRouter.get("/", async (req, res) => {
   try {
-    const result = await pool.query(`SELECT * FROM blocked_ips ORDER BY created_at DESC`);
+    const result = await pool.query(`SELECT * FROM blocked_ips where room = $1 ORDER BY created_at DESC`,[ROOM]);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -21,10 +21,10 @@ ipRouter.post("/block", async (req, res) => {
     if (!ip) return res.status(400).json({ error: "IP 必填" });
 
     const result = await pool.query(
-      `INSERT INTO blocked_ips (ip, reason) VALUES ($1, $2)
+      `INSERT INTO blocked_ips (ip, reason, room) VALUES ($1, $2, $3)
        ON CONFLICT (ip) DO UPDATE SET reason = EXCLUDED.reason, created_at = NOW()
        RETURNING *`,
-      [ip, reason || null]
+      [ip, reason || null, ROOM]
     );
 
     res.json({ success: true, blocked: result.rows[0] });
