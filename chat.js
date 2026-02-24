@@ -111,6 +111,14 @@ export function chatHandlers(io, socket) {
         if (!exists) {
             rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gender, avatar });
         } else {
+            const oldSocket = io.sockets.sockets.get(exists.socketId);
+            if (oldSocket) {
+                oldSocket.emit("forceLogout", {
+                    reason: "帳號已在其他地方登入"
+                });
+                oldSocket.disconnect(true);
+                console.log("踢掉重複forceLogout", room, exists.socketId, name);
+            }
             // 如果已存在，更新 socketId 或其他資訊
             exists.id = socket.id;
             exists.socketId = socket.id;
