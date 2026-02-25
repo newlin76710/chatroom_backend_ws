@@ -1,7 +1,70 @@
+import { pool } from "./db.js";
+import { expForNextLevel } from "./utils.js";
 import { songState } from "./song.js";
+import { rooms } from "./chat.js";
 import { AccessToken } from "livekit-server-sdk";
 
 export function songSocket(io, socket) {
+  // ===== 給唱歌超過 2 分鐘加 EXP =====
+  async function giveExpForSinging(room, singer) {
+    const state = songState[room];
+    if (!state || !state.singStartTime) return;
+
+    const MINUTE_2 = 2 * 60 * 1000;
+    const expToAdd = 100;
+
+    const duration = Date.now() - state.singStartTime;
+    state.singStartTime = null; // ⭐ 清掉計時器 / 時間紀錄
+
+    if (duration < MINUTE_2) return; // 未達 2 分鐘，不加
+
+    try {
+      const res = await pool.query(
+        `
+            SELECT u.id, urs.level, urs.exp
+            FROM users u
+            JOIN user_room_stats urs
+            ON u.id = urs.user_id
+            WHERE u.username = $1
+            AND urs.room = $2
+            `,
+        [singer, room]
+      );
+
+      const dbUser = res.rows[0];
+      if (!dbUser) return;
+
+      let { level, exp } = dbUser;
+      exp += expToAdd;
+
+      while (level < 90 && exp >= expForNextLevel(level)) {
+        exp -= expForNextLevel(level);
+        level += 1;
+      }
+      await pool.query(
+        `
+            UPDATE user_room_stats
+            SET level = $1, exp = $2
+            WHERE user_id = $3 AND room = $4
+            `,
+        [level, exp, dbUser.id, room]
+      );
+
+      // 更新記憶體 rooms[room]
+      if (rooms[room]) {
+        const roomUser = rooms[room].find(u => u.name === singer);
+        if (roomUser) {
+          roomUser.level = level;
+          roomUser.exp = exp;
+        }
+      }
+
+      io.to(room).emit("updateUsers", rooms[room]);
+      console.log(`[Debug] ${singer} +${expToAdd} EXP (唱歌超過 2 分鐘)`);
+    } catch (err) {
+      console.error("給 EXP 失敗：", err);
+    }
+  }
 
   function broadcastMicState(room) {
     const state = songState[room];
@@ -100,7 +163,7 @@ export function songSocket(io, socket) {
   socket.on("grabMic", async ({ room, singer }) => {
     if (!songState[room]) songState[room] = { queue: [], currentSinger: null, currentSingerSocketId: null };
     const state = songState[room];
-
+    state.singStartTime = Date.now();
     // 如果有人正在唱，先踢掉
     if (state.currentSingerSocketId && state.currentSingerSocketId !== socket.id) {
       io.to(state.currentSingerSocketId).emit("forceStopSing");
@@ -152,6 +215,7 @@ export function songSocket(io, socket) {
 
     // 如果是正在唱的，直接 force stop
     if (state.currentSinger === singer) {
+      giveExpForSinging(room, singer);
       io.to(target.socketId).emit("forceStopSing");
       state.currentSinger = null;
       state.currentSingerSocketId = null;
@@ -168,6 +232,7 @@ export function songSocket(io, socket) {
     if (!state) return;
 
     if (state.currentSinger === singer) {
+      giveExpForSinging(room, singer);
       state.currentSinger = null;
       state.currentSingerSocketId = null;
       broadcastMicState(room); // 全體更新
@@ -181,6 +246,7 @@ export function songSocket(io, socket) {
       if (!state) continue;
 
       if (state.currentSingerSocketId === socket.id) {
+        giveExpForSinging(room, state.currentSinger);
         state.currentSinger = null;
         state.currentSingerSocketId = null;
         broadcastMicState(room);
