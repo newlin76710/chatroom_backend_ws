@@ -120,6 +120,27 @@ export const authMiddleware = async (req, res, next) => {
   }
 };
 
+// GET /me - 取得自己資料
+authRouter.get("/me", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    // 回傳給前端的資料
+    res.json({
+      id: user.id,
+      username: user.username,
+      gender: user.gender,
+      avatar: user.avatar,
+      account_type: user.account_type,
+      level: user.level,
+      exp: user.exp,
+      room: user.room,
+    });
+  } catch (err) {
+    console.error("GET /me error:", err);
+    res.status(500).json({ error: "取得使用者資料失敗" });
+  }
+});
+
 /* ================= 訪客登入 ================= */
 authRouter.post("/guest", async (req, res) => {
   const ip = getClientIP(req);
