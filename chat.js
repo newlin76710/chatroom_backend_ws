@@ -6,7 +6,7 @@ import { ioTokens } from "./auth.js";
 import { addUserIP, removeUserIP } from "./ip.js";
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
 const ANL = process.env.ADMIN_MIN_LEVEL || 91;
-
+const GUEST = process.env.OPENGUEST === "true";
 const OPENAI = process.env.OPENAI === "true"
 export const rooms = {};
 export const roomContext = {};
@@ -65,6 +65,10 @@ export function chatHandlers(io, socket) {
         let level = 1, exp = 0, gender = "女", avatar = "/avatars/g01.gif";
         let type = user.type || "guest";
         let token = user.token || "";
+        if (type === "guest" && !GUEST) {
+            socket.emit("joinFailed", { reason: "聊天室禁止訪客登入" });
+            return;
+        }
         try {
             const res = await pool.query(
                 `
