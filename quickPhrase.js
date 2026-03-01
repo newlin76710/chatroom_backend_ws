@@ -13,7 +13,7 @@ quickPhrasesRouter.get("/", authMiddleware, async (req, res) => {
        FROM quick_phrase 
        WHERE user_id = $1 
        ORDER BY sort_order ASC
-       LIMIT 10`,
+       LIMIT 20`,
       [userId]
     );
     res.json({ phrases: result.rows });
