@@ -7,6 +7,7 @@ import { onlineUsers } from "./chat.js";
 import { addUserIP, removeUserIP } from "./ip.js";
 
 const ROOM = process.env.ROOMNAME || 'windsong';
+const GUEST = process.env.OPENGUEST === "true";
 export const authRouter = express.Router();
 export const ioTokens = new Map();
 const fullWidthRegex = /[^\u0000-\u00ff]/;
@@ -126,6 +127,11 @@ authRouter.post("/guest", async (req, res) => {
   const { gender, username } = req.body;
 
   try {
+    if(!GUEST) {
+      return res.status(400).json({
+        error: "此聊天室已關閉訪客登入",
+      });
+    }
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
         error: "暱稱最多 6 個中文字 或 12 個英數字",
