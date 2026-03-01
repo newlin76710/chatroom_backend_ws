@@ -67,6 +67,8 @@ export function chatHandlers(io, socket) {
         let token = user.token || "";
         if (type === "guest" && !GUEST) {
             socket.emit("joinFailed", { reason: "本聊天室禁止訪客登入" });
+            socket.disconnect(true); // 🔹 直接斷線，不會進 rooms[room]
+            return;
         }
         try {
             const res = await pool.query(
