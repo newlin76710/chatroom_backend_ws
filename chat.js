@@ -66,7 +66,7 @@ export function chatHandlers(io, socket) {
         let type = user.type || "guest";
         let token = user.token || "";
         if (type === "guest" && !GUEST) {
-            socket.emit("joinFailed", { reason: "聊天室禁止訪客登入" });
+            socket.emit("joinFailed", { reason: "本聊天室禁止訪客登入" });
             return;
         }
         try {
