@@ -315,7 +315,7 @@ authRouter.post("/register", async (req, res) => {
 authRouter.post("/login", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
-  const { username, password } = req.body;
+  const { username, password, allowProfileIncomplete } = req.body;
 
   try {
     if (!username || isNicknameTooLong(username)) {
@@ -374,7 +374,7 @@ authRouter.post("/login", async (req, res) => {
     if (!match) return res.status(400).json({ error: "密碼錯誤" });
 
     // ===== 檢查手機與 Email 是否填寫 =====
-    if (!user.phone || !user.email) {
+    if (!allowProfileIncomplete && (!user.phone || !user.email)) {
       return res.status(403).json({
         error: "請先至修改資料中補齊手機與 Email 資料",
         requireProfileUpdate: true
