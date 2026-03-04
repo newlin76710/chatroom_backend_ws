@@ -148,7 +148,7 @@ authRouter.post("/guest", async (req, res) => {
   const { gender, username } = req.body;
 
   try {
-    if(!GUEST) {
+    if (!GUEST) {
       return res.status(400).json({
         error: "此聊天室已關閉訪客登入",
       });
@@ -282,6 +282,17 @@ authRouter.post("/register", async (req, res) => {
         error: "此帳號暱稱違反規範"
       });
     }
+    if (!phone || !email) {
+      return res.status(400).json({ error: "請填寫手機與 Email" });
+    }
+    const phoneRegex = /^[0-9]{10}$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({ error: "手機格式錯誤" });
+    }
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: "Email 格式錯誤" });
+    }
     const exist = await pool.query(`SELECT id FROM users WHERE username = $1`, [username]);
     if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
 
@@ -351,7 +362,7 @@ authRouter.post("/login", async (req, res) => {
 
     // 從資料庫取得帳號資訊（密碼、基本資料）
     const result = await pool.query(
-      `SELECT id, username, password, avatar, gender 
+      `SELECT id, username, password, avatar, gender, phone, email
        FROM users WHERE username=$1`,
       [username]
     );
@@ -361,6 +372,14 @@ authRouter.post("/login", async (req, res) => {
     const user = result.rows[0];
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ error: "密碼錯誤" });
+
+    // ===== 檢查手機與 Email 是否填寫 =====
+    if (!user.phone || !user.email) {
+      return res.status(403).json({
+        error: "請先至修改資料中補齊手機與 Email 資料",
+        requireProfileUpdate: true
+      });
+    }
 
     // ====== 處理聊天室等級/經驗 ======
     const room = ROOM; // 或者 req.body.room
@@ -460,7 +479,7 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     if (user.account_type !== "account") {
       return res.status(403).json({ error: "訪客無法修改資料" });
     }
-    const { username, password, gender, avatar } = req.body;
+    const { username, password, gender, avatar, phone, email } = req.body;
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
         error: "暱稱最多 6 個中文字 或 12 個英數字",
@@ -476,6 +495,18 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
         error: "暱稱只能包含中文、英文或數字，不能包含符號"
       });
     }
+    if (!phone || !email) {
+      return res.status(400).json({ error: "手機與 Email 為必填" });
+    }
+    const phoneRegex = /^[0-9]{10}$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({ error: "手機格式錯誤" });
+    }
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: "Email 格式錯誤" });
+    }
+
     // 如果有改密碼就 hash
     let hashedPassword = user.password; // 原本密碼
     if (password && password.trim() !== "") {
@@ -485,14 +516,16 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     // 更新資料
     const updateRes = await pool.query(
       `UPDATE users 
-       SET username = $1, password = $2, gender = $3, avatar = $4
-       WHERE id = $5
+       SET username = $1, password = $2, gender = $3, avatar = $4, phone = $5, email = $6
+       WHERE id = $7
        RETURNING id, username, gender, avatar, level, exp`,
       [
         username || user.username,
         hashedPassword,
         gender || user.gender,
         avatar || user.avatar,
+        phone,
+        email,
         user.id,
       ]
     );
@@ -501,5 +534,57 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "修改資料失敗" });
+  }
+});
+
+// 忘記密碼
+authRouter.post("/forgotPassword", async (req, res) => {
+  try {
+    const { username, phone, email } = req.body;
+
+    if (!username || !phone || !email) {
+      return res.status(400).json({ error: "帳號、手機與 Email 為必填" });
+    }
+
+    // 驗證格式
+    const phoneRegex = /^[0-9]{10}$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!phoneRegex.test(phone)) return res.status(400).json({ error: "手機格式錯誤" });
+    if (!emailRegex.test(email)) return res.status(400).json({ error: "Email 格式錯誤" });
+
+    // 查詢使用者
+    const userRes = await pool.query(
+      `SELECT id, username FROM users 
+       WHERE username=$1 AND phone=$2 AND email=$3 AND account_type='account'`,
+      [username, phone, email]
+    );
+
+    if (!userRes.rowCount) {
+      return res.status(404).json({ error: "找不到對應的帳號資料" });
+    }
+
+    const user = userRes.rows[0];
+
+    // 生成新密碼
+    const newPassword = crypto.randomBytes(6).toString("hex"); // 12位隨機密碼
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // 更新資料庫
+    await pool.query(
+      `UPDATE users SET password=$1 WHERE id=$2`,
+      [hashedPassword, user.id]
+    );
+
+    // 回傳給使用者（測試用，真實上線建議 Email/SMS）
+    res.json({
+      message: "密碼已重置成功",
+      username: user.username,
+      newPassword,
+    });
+
+  } catch (err) {
+    console.error("密碼重置失敗:", err);
+    res.status(500).json({ error: "密碼重置失敗" });
   }
 });
