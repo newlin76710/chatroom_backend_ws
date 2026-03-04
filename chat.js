@@ -14,7 +14,15 @@ export const aiTimers = {};
 export const videoState = {};
 export const displayQueue = {};
 export const onlineUsers = new Map();
+// ================= 防洗版 =================
+const userSpamCache = new Map();
+// key: username
+// value: { lastMessage, lastTime }
 
+// ================= 禁言系統 =================
+const muteMap = new Map();
+// key: username
+// value: muteUntil (timestamp)
 /* ================= 工具 ================= */
 function getClientIP(socket) {
     return socket?.handshake?.headers
@@ -177,6 +185,28 @@ export function chatHandlers(io, socket) {
 
     // --- 聊天訊息 ---
     socket.on("message", async ({ room, message, user, target, mode, color }) => {
+        const now = Date.now();
+        const username = user.name;
+        // ===== 1️⃣ 檢查是否被禁言 =====
+        const muteUntil = muteMap.get(username);
+        if (muteUntil && now < muteUntil) {
+            socket.emit("systemMessage", `你已被禁言 ${Math.ceil((muteUntil - now) / 1000)} 秒`);
+            return;
+        }
+        // ===== 2️⃣ 10秒內不能重複相同內容 =====
+        const cleanMsg = message.trim();
+        const record = userSpamCache.get(username);
+        if (record) {
+            const timeDiff = now - record.lastTime;
+            if (record.lastMessage === cleanMsg && timeDiff <= 10000) {
+                socket.emit("systemMessage", "❌ 10秒內不能重複相同發言");
+                return;
+            }
+        }
+        userSpamCache.set(username, {
+            lastMessage: cleanMsg,
+            lastTime: now
+        });
         if (!roomContext[room]) roomContext[room] = [];
         roomContext[room].push({ user: user.name, text: message });
         if (roomContext[room].length > 20) roomContext[room].shift();
@@ -306,7 +336,31 @@ export function chatHandlers(io, socket) {
         io.to(room).emit("videoUpdate", video);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
     });
+    // ================= 管理員禁言 =================
+    socket.on("muteUser", ({ room, targetName }) => {
 
+        const users = rooms[room];
+        if (!users) return;
+
+        const admin = users.find(u => u.socketId === socket.id);
+        if (!admin || admin.level < ANL) {
+            socket.emit("systemMessage", "權限不足");
+            return;
+        }
+
+        if (admin.name === targetName) {
+            socket.emit("systemMessage", "不能禁言自己");
+            return;
+        }
+
+        const muteSeconds = 30;
+        const muteUntil = Date.now() + muteSeconds * 1000;
+
+        muteMap.set(targetName, muteUntil);
+
+        io.to(room).emit("systemMessage", `${targetName} 被禁言 30 秒`);
+    });
+    
     // socketHandlers/chat.js 或 server.js
     socket.on("kickUser", async ({ room, targetName }) => {
         console.log("🔹 kickUser received:", room, targetName);
