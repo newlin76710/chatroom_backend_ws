@@ -285,7 +285,7 @@ authRouter.post("/register", async (req, res) => {
     if (!phone || !email) {
       return res.status(400).json({ error: "請填寫手機與 Email" });
     }
-    const phoneRegex = /^[0-9]{10}$/;
+    const phoneRegex = /^[0-9]{8,11}$/;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!phoneRegex.test(phone)) {
       return res.status(400).json({ error: "手機格式錯誤" });
@@ -498,7 +498,7 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     if (!phone || !email) {
       return res.status(400).json({ error: "手機與 Email 為必填" });
     }
-    const phoneRegex = /^[0-9]{10}$/;
+    const phoneRegex = /^[0-9]{8,11}$/;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!phoneRegex.test(phone)) {
       return res.status(400).json({ error: "手機格式錯誤" });
