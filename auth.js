@@ -373,13 +373,13 @@ authRouter.post("/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ error: "密碼錯誤" });
 
-    // ===== 檢查手機與 Email 是否填寫 =====
-    if (!allowProfileIncomplete && (!user.phone || !user.email)) {
-      return res.status(403).json({
-        error: "請先至修改資料中補齊手機與 Email 資料",
-        requireProfileUpdate: true
-      });
-    }
+    // // ===== 檢查手機與 Email 是否填寫 =====
+    // if (!allowProfileIncomplete && (!user.phone || !user.email)) {
+    //   return res.status(403).json({
+    //     error: "請先至修改資料中補齊手機與 Email 資料",
+    //     requireProfileUpdate: true
+    //   });
+    // }
 
     // ====== 處理聊天室等級/經驗 ======
     const room = ROOM; // 或者 req.body.room
@@ -495,9 +495,9 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
         error: "暱稱只能包含中文、英文或數字，不能包含符號"
       });
     }
-    if (!phone || !email) {
-      return res.status(400).json({ error: "手機與 Email 為必填" });
-    }
+    // if (!phone || !email) {
+    //   return res.status(400).json({ error: "手機與 Email 為必填" });
+    // }
     const phoneRegex = /^[0-9]{8,11}$/;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!phoneRegex.test(phone)) {
