@@ -282,26 +282,40 @@ authRouter.post("/register", async (req, res) => {
         error: "此帳號暱稱違反規範"
       });
     }
-    if (!phone || !email) {
-      return res.status(400).json({ error: "請填寫手機與 Email" });
-    }
+    // 轉換空字串
+    const phoneValue = phone?.trim() || null;
+    const emailValue = email?.trim() || null;
+
     const phoneRegex = /^[0-9]{8,11}$/;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!phoneRegex.test(phone)) {
+
+    // 有填才驗證
+    if (phoneValue && !phoneRegex.test(phoneValue)) {
       return res.status(400).json({ error: "手機格式錯誤" });
     }
-    if (!emailRegex.test(email)) {
+
+    if (emailValue && !emailRegex.test(emailValue)) {
       return res.status(400).json({ error: "Email 格式錯誤" });
     }
+
     const exist = await pool.query(`SELECT id FROM users WHERE username = $1`, [username]);
     if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
 
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      `INSERT INTO users (username, password, gender, phone, email, avatar, level, exp, register_ip)
+      `INSERT INTO users 
+       (username, password, gender, phone, email, avatar, level, exp, register_ip)
        VALUES ($1, $2, $3, $4, $5, $6, 2, 0, $7)
        RETURNING id, username, gender, avatar, level, exp`,
-      [username, hash, gender === "男" ? "男" : "女", phone || null, email || null, avatar || null, ip || null]
+      [
+        username,
+        hash,
+        gender === "男" ? "男" : "女",
+        phoneValue,
+        emailValue,
+        avatar || null,
+        ip || null
+      ]
     );
 
     res.json({ message: "註冊成功", user: result.rows[0] });
@@ -500,10 +514,13 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     // }
     const phoneRegex = /^[0-9]{8,11}$/;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!phoneRegex.test(phone)) {
+    // 手機有填才驗證
+    if (phone && !phoneRegex.test(phone)) {
       return res.status(400).json({ error: "手機格式錯誤" });
     }
-    if (!emailRegex.test(email)) {
+
+    // email 有填才驗證
+    if (email && !emailRegex.test(email)) {
       return res.status(400).json({ error: "Email 格式錯誤" });
     }
 
@@ -524,8 +541,8 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
         hashedPassword,
         gender || user.gender,
         avatar || user.avatar,
-        phone,
-        email,
+        phone || null,
+        email || null,
         user.id,
       ]
     );
