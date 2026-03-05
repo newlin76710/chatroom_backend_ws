@@ -564,7 +564,7 @@ authRouter.post("/forgotPassword", async (req, res) => {
     }
 
     // 驗證格式
-    const phoneRegex = /^[0-9]{10}$/;
+    const phoneRegex = /^[0-9]{8,11}$/;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!phoneRegex.test(phone)) return res.status(400).json({ error: "手機格式錯誤" });
