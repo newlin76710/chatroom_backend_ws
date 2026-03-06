@@ -98,7 +98,7 @@ export const authMiddleware = async (req, res, next) => {
 
     // 再抓 user_room_stats 該 room 的等級/經驗
     const statsRes = await pool.query(
-      `SELECT level, exp, goldApples
+      `SELECT level, exp, gold_apples
        FROM user_room_stats
        WHERE user_id=$1 AND room=$2`,
       [user.id, room]
