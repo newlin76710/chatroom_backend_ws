@@ -98,19 +98,19 @@ export const authMiddleware = async (req, res, next) => {
 
     // 再抓 user_room_stats 該 room 的等級/經驗
     const statsRes = await pool.query(
-      `SELECT level, exp, gold_apples AS goldApples
+      `SELECT level, exp, gold_apples
        FROM user_room_stats
        WHERE user_id=$1 AND room=$2`,
       [user.id, room]
     );
 
-    const stats = statsRes.rowCount ? statsRes.rows[0] : { level: 1, exp: 0, goldApples: 0 };
+    const stats = statsRes.rowCount ? statsRes.rows[0] : { level: 1, exp: 0, gold_apples: 0 };
 
     req.user = {
       ...user,
       level: stats.level,
       exp: stats.exp,
-      goldApples: stats.goldApples,
+      gold_apples: stats.gold_apples,
       room
     };
 
@@ -134,7 +134,7 @@ authRouter.get("/me", authMiddleware, async (req, res) => {
       account_type: user.account_type,
       level: user.level,
       exp: user.exp,
-      goldApples: user.goldApples,
+      gold_apples: user.gold_apples,
       room: user.room,
     });
   } catch (err) {

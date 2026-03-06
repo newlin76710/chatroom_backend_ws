@@ -80,7 +80,7 @@ export function chatHandlers(io, socket) {
         let level = 1, exp = 0, gender = "女", avatar = "/avatars/g01.gif";
         let type = user.type || "guest";
         let token = user.token || "";
-        let goldApples = 0;
+        let gold_apples = 0;
         if (type === "guest" && !GUEST) {
             socket.emit("joinFailed", { reason: "本聊天室禁止訪客登入" });
             socket.disconnect(true); // 🔹 直接斷線，不會進 rooms[room]
@@ -103,7 +103,7 @@ export function chatHandlers(io, socket) {
                 name = dbUser.username;
                 level = dbUser.level || 1;
                 exp = dbUser.exp || 0;
-                goldApples = dbUser.gold_apples || 0;
+                gold_apples = dbUser.gold_apples || 0;
                 gender = dbUser.gender || "女";
                 avatar = dbUser.avatar || avatar;
                 type = type === "account" ? "account" : type;
@@ -113,7 +113,7 @@ export function chatHandlers(io, socket) {
         }
         console.log("🟢 join", room, socket.id, name);
         // 更新 socket.data
-        socket.data = { room, name, level, exp, goldApples, gender, avatar, type };
+        socket.data = { room, name, level, exp, gold_apples, gender, avatar, type };
 
         // 🔥 用 token 判斷真正雙開
         if (token) {
@@ -139,7 +139,7 @@ export function chatHandlers(io, socket) {
         // 加入或更新房間列表
         const exists = rooms[room].find(u => u.name === name);
         if (!exists) {
-            rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, goldApples, gender, avatar });
+            rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gold_apples, gender, avatar });
         } else {
             const oldSocket = io.sockets.sockets.get(exists.socketId);
             if (oldSocket) {
@@ -154,7 +154,7 @@ export function chatHandlers(io, socket) {
             exists.socketId = socket.id;
             exists.level = level;
             exists.exp = exp;
-            exists.goldApples = goldApples;
+            exists.gold_apples = gold_apples;
             exists.gender = gender;
             exists.avatar = avatar;
             exists.type = type;

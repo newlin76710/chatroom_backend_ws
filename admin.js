@@ -127,7 +127,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
         u.username,
         s.level,
         s.exp,
-        s.gold_apples AS "goldApples",
+        s.gold_apples,
         u.created_at,
         MAX(l.login_at) AS last_login_at
       FROM user_room_stats s
