@@ -6,7 +6,7 @@ import { authMiddleware } from "./auth.js"; // 驗證 token 並填 req.user
 export const adminRouter = express.Router();
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
 const ROOM = process.env.ROOMNAME || 'windsong';
-
+const MAX_GOLD_APPLES = parseInt(process.env.MAX_GOLD_APPLES || "9999", 10);
 /* ================= 登入紀錄 API（支援分頁 / 日期） ================= */
 adminRouter.post("/login-logs", authMiddleware, async (req, res) => {
   try {
@@ -443,11 +443,11 @@ adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
   }
 });
 
-/* ================= 調整使用者金蘋果 ================= */
+/* ================= 設定使用者金蘋果數量（直接指定） ================= */
 adminRouter.post("/set-gold-apples", authMiddleware, async (req, res) => {
   try {
     const admin = req.user;
-    const { username, count } = req.body; // count 可以正數或負數
+    const { username, count } = req.body; // count 直接是要設的數量
 
     if (!admin || admin.level < AML)
       return res.status(403).json({ error: "權限不足" });
@@ -455,31 +455,37 @@ adminRouter.post("/set-gold-apples", authMiddleware, async (req, res) => {
     if (!username || typeof count !== "number")
       return res.status(400).json({ error: "參數錯誤" });
 
-    // 🔹 先找到 user_id
+    // 🔹 限制範圍
+    const newAmount = Math.max(0, Math.min(MAX_GOLD_APPLES, count));
+
+    // 🔹 找到目標使用者
     const targetRes = await pool.query(
-      `SELECT id FROM users WHERE username = $1`,
-      [username]
+      `SELECT id FROM users u
+       JOIN user_room_stats urs ON u.id = urs.user_id
+       WHERE u.username = $1 AND urs.room = $2`,
+      [username, ROOM]
     );
 
     if (!targetRes.rows.length)
-      return res.status(404).json({ error: "使用者不存在" });
+      return res.status(404).json({ error: "使用者不存在或未加入聊天室" });
 
-    const userId = targetRes.rows[0].id;
+    const targetId = targetRes.rows[0].id;
 
-    // 🔹 更新指定聊天室金蘋果數量，可以 + 或 -
+    // 🔹 更新金蘋果數量
     await pool.query(
-      `
-      UPDATE user_room_stats
-      SET gold_apples = GREATEST(gold_apples + $1, 0)
-      WHERE user_id = $2 AND room = $3
-      `,
-      [count, userId, ROOM]
+      `UPDATE user_room_stats
+       SET gold_apples = $1
+       WHERE user_id = $2 AND room = $3`,
+      [newAmount, targetId, ROOM]
     );
 
-    res.json({ success: true, message: `已將 ${username} 的金蘋果調整 ${count > 0 ? "+" : ""}${count}` });
+    res.json({
+      success: true,
+      message: `已將 ${username} 的金蘋果設為 ${newAmount}`
+    });
 
   } catch (err) {
-    console.error("調整使用者金蘋果失敗", err);
+    console.error("設定使用者金蘋果失敗", err);
     res.status(500).json({ error: "操作失敗" });
   }
 });
