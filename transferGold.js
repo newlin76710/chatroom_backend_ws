@@ -98,7 +98,18 @@ export const createTransferRouter = (io) => {
                 target: targetUsername,
                 created_at: new Date(),
             });
-
+            // 🔹 廣播給聊天室所有人
+            if (io) {
+                // 🔹 更新聊天室金蘋果
+                io.to(ROOM).emit("updateGoldApples", {
+                    username: sender.username,
+                    gold_apples: senderStats.gold_apples - actualTransfer
+                });
+                io.to(ROOM).emit("updateGoldApples", {
+                    username: targetUsername,
+                    gold_apples: targetStats.gold_apples + actualTransfer
+                });
+            }
             return res.json({ success: true, requested: amount, transferred: actualTransfer, to: targetUsername });
         } catch (err) {
             await client.query("ROLLBACK");
