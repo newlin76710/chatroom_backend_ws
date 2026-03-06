@@ -13,7 +13,7 @@ export const createTransferRouter = (io) => {
         try {
             const sender = req.user;
             console.log("[transfer-gold] sender =", sender); // 🔹 這裡 log 出來
-            const { targetUsername, amount } = req.body;
+            let { targetUsername, amount } = req.body;
             // 🔹 強制轉成數字
             amount = Number(amount);
             if (!sender) return res.status(401).json({ error: "未登入" });
