@@ -20,6 +20,7 @@ import { ipRouter } from "./blockIP.js";
 import { nicknameRouter } from "./blockNickname.js";
 import { announcementRouter } from "./announcementRouter.js";
 import { messageBoardRouter } from "./messageBoardRouter.js";
+import { createTransferRouter } from "./transferGold.js";
 
 dotenv.config();
 
@@ -81,7 +82,7 @@ app.use("/api/quick-phrases", quickPhrasesRouter);
 app.use("/api/blocked-ips", ipRouter);
 app.use("/api/blocked-nicknames", nicknameRouter);
 app.use("/api/message-board", messageBoardRouter);
-
+app.use("/api", createTransferRouter(io));
 //////////////////////////////////////////////////////
 // 取得房間使用者
 //////////////////////////////////////////////////////
