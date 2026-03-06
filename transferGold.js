@@ -12,7 +12,7 @@ export const createTransferRouter = (io) => {
     const client = await pool.connect();
     try {
       const sender = req.user;
-      console.log("[transfer-gold] sender =", sender);
+      //console.log("[transfer-gold] sender =", sender);
 
       let { targetUsername, amount } = req.body;
       amount = Number(amount);
