@@ -1,3 +1,4 @@
+// transfer.js
 import express from "express";
 import { pool } from "./db.js";
 import { authMiddleware } from "./auth.js";
@@ -24,7 +25,8 @@ transferRouter.post("/transfer-gold", authMiddleware, async (req, res) => {
 
         // 取得轉出者
         const senderRes = await client.query(
-            `SELECT id, gold_apples FROM users u
+            `SELECT u.id AS user_id, urs.gold_apples
+             FROM users u
              JOIN user_room_stats urs ON u.id = urs.user_id
              WHERE u.username = $1 AND urs.room = $2 FOR UPDATE`,
             [sender.username, ROOM]
@@ -39,7 +41,8 @@ transferRouter.post("/transfer-gold", authMiddleware, async (req, res) => {
 
         // 取得轉入者
         const targetRes = await client.query(
-            `SELECT id, gold_apples FROM users u
+            `SELECT u.id AS user_id, urs.gold_apples
+             FROM users u
              JOIN user_room_stats urs ON u.id = urs.user_id
              WHERE u.username = $1 AND urs.room = $2 FOR UPDATE`,
             [targetUsername, ROOM]
@@ -50,8 +53,8 @@ transferRouter.post("/transfer-gold", authMiddleware, async (req, res) => {
 
         const targetStats = targetRes.rows[0];
 
-        // 計算實際可轉移數量
-        let actualTransfer = Math.min(amount, MAX_GOLD_APPLES - targetStats.gold_apples);
+        // 計算可轉移數量
+        const actualTransfer = Math.min(amount, MAX_GOLD_APPLES - targetStats.gold_apples);
         if (actualTransfer <= 0)
             throw new Error("目標使用者金蘋果已達上限");
 
@@ -60,7 +63,7 @@ transferRouter.post("/transfer-gold", authMiddleware, async (req, res) => {
             `UPDATE user_room_stats
              SET gold_apples = gold_apples - $1
              WHERE user_id = $2 AND room = $3`,
-            [actualTransfer, senderStats.id, ROOM]
+            [actualTransfer, senderStats.user_id, ROOM]
         );
 
         // 更新轉入者
@@ -68,7 +71,20 @@ transferRouter.post("/transfer-gold", authMiddleware, async (req, res) => {
             `UPDATE user_room_stats
              SET gold_apples = gold_apples + $1
              WHERE user_id = $2 AND room = $3`,
-            [actualTransfer, targetStats.id, ROOM]
+            [actualTransfer, targetStats.user_id, ROOM]
+        );
+
+        // 🔹 系統訊息：轉移通知
+        await client.query(
+            `INSERT INTO message_logs
+             (room, username, role, message, message_type, mode, target, created_at, ip)
+             VALUES ($1, $2, 'system', $3, 'system', 'reward', $4, NOW(), '0.0.0.0')`,
+            [
+                ROOM,
+                sender.username,
+                `${sender.username} 已給 ${targetUsername} ${actualTransfer} 金蘋果 以示獎勵`,
+                targetUsername
+            ]
         );
 
         await client.query("COMMIT");
