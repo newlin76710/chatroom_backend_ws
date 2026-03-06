@@ -460,7 +460,7 @@ adminRouter.post("/set-gold-apples", authMiddleware, async (req, res) => {
 
     // 🔹 找到目標使用者
     const targetRes = await pool.query(
-      `SELECT id FROM users u
+      `SELECT u.id FROM users u
        JOIN user_room_stats urs ON u.id = urs.user_id
        WHERE u.username = $1 AND urs.room = $2`,
       [username, ROOM]
