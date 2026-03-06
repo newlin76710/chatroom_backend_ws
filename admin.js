@@ -469,7 +469,7 @@ adminRouter.post("/set-gold-apples", authMiddleware, async (req, res) => {
     if (!targetRes.rows.length)
       return res.status(404).json({ error: "使用者不存在或未加入聊天室" });
 
-    const targetId = targetRes.rows[0].id;
+    const targetId = targetRes.rows[0].user_id;
 
     // 🔹 更新金蘋果數量
     await pool.query(
