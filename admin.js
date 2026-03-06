@@ -127,6 +127,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
         u.username,
         s.level,
         s.exp,
+        s.gold_apples AS "goldApples",
         u.created_at,
         MAX(l.login_at) AS last_login_at
       FROM user_room_stats s
@@ -134,7 +135,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
       LEFT JOIN login_logs l
         ON u.username = l.username
       ${where}
-      GROUP BY u.id, s.level, s.exp
+      GROUP BY u.id, s.level, s.exp, s.gold_apples
       ORDER BY s.level DESC, s.exp DESC, u.created_at ASC
       LIMIT $${values.length + 1} OFFSET $${values.length + 2}
       `,
@@ -439,5 +440,46 @@ adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("查詢自己的發言失敗", err);
     res.status(500).json({ error: "查詢失敗" });
+  }
+});
+
+/* ================= 調整使用者金蘋果 ================= */
+adminRouter.post("/set-gold-apples", authMiddleware, async (req, res) => {
+  try {
+    const admin = req.user;
+    const { username, count } = req.body; // count 可以正數或負數
+
+    if (!admin || admin.level < AML)
+      return res.status(403).json({ error: "權限不足" });
+
+    if (!username || typeof count !== "number")
+      return res.status(400).json({ error: "參數錯誤" });
+
+    // 🔹 先找到 user_id
+    const targetRes = await pool.query(
+      `SELECT id FROM users WHERE username = $1`,
+      [username]
+    );
+
+    if (!targetRes.rows.length)
+      return res.status(404).json({ error: "使用者不存在" });
+
+    const userId = targetRes.rows[0].id;
+
+    // 🔹 更新指定聊天室金蘋果數量，可以 + 或 -
+    await pool.query(
+      `
+      UPDATE user_room_stats
+      SET gold_apples = GREATEST(gold_apples + $1, 0)
+      WHERE user_id = $2 AND room = $3
+      `,
+      [count, userId, ROOM]
+    );
+
+    res.json({ success: true, message: `已將 ${username} 的金蘋果調整 ${count > 0 ? "+" : ""}${count}` });
+
+  } catch (err) {
+    console.error("調整使用者金蘋果失敗", err);
+    res.status(500).json({ error: "操作失敗" });
   }
 });
