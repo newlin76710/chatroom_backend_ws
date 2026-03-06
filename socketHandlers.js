@@ -7,64 +7,70 @@ import { AccessToken } from "livekit-server-sdk";
 export function songSocket(io, socket) {
   // ===== 給唱歌超過 2 分鐘加 EXP =====
   async function giveExpForSinging(room, singer) {
-    const state = songState[room];
-    if (!state || !state.singStartTime) return;
+  const state = songState[room];
+  if (!state || !state.singStartTime) return;
 
-    const MINUTE_2 = 2 * 60 * 1000;
-    const expToAdd = 100;
+  const MINUTE_2 = 2 * 60 * 1000;
+  const expToAdd = 100;
+  const applesToAdd = 2; // ⭐ 每次唱歌給 2 顆金蘋果
 
-    const duration = Date.now() - state.singStartTime;
-    state.singStartTime = null; // ⭐ 清掉計時器 / 時間紀錄
+  const duration = Date.now() - state.singStartTime;
+  state.singStartTime = null; // 清掉計時器 / 時間紀錄
 
-    if (duration < MINUTE_2) return; // 未達 2 分鐘，不加
+  if (duration < MINUTE_2) return; // 未達 2 分鐘，不加
 
-    try {
-      const res = await pool.query(
-        `
-            SELECT u.id, urs.level, urs.exp
-            FROM users u
-            JOIN user_room_stats urs
-            ON u.id = urs.user_id
-            WHERE u.username = $1
-            AND urs.room = $2
-            `,
-        [singer, room]
-      );
+  try {
+    const res = await pool.query(
+      `
+        SELECT u.id, urs.level, urs.exp, urs.gold_apples
+        FROM users u
+        JOIN user_room_stats urs
+          ON u.id = urs.user_id
+        WHERE u.username = $1
+          AND urs.room = $2
+      `,
+      [singer, room]
+    );
 
-      const dbUser = res.rows[0];
-      if (!dbUser) return;
+    const dbUser = res.rows[0];
+    if (!dbUser) return;
 
-      let { level, exp } = dbUser;
-      exp += expToAdd;
+    let { level, exp, gold_apples } = dbUser;
+    exp += expToAdd;
+    gold_apples += applesToAdd;
 
-      while (level < 90 && exp >= expForNextLevel(level)) {
-        exp -= expForNextLevel(level);
-        level += 1;
-      }
-      await pool.query(
-        `
-            UPDATE user_room_stats
-            SET level = $1, exp = $2
-            WHERE user_id = $3 AND room = $4
-            `,
-        [level, exp, dbUser.id, room]
-      );
-
-      // 更新記憶體 rooms[room]
-      if (rooms[room]) {
-        const roomUser = rooms[room].find(u => u.name === singer);
-        if (roomUser) {
-          roomUser.level = level;
-          roomUser.exp = exp;
-        }
-      }
-
-      io.to(room).emit("updateUsers", rooms[room]);
-      console.log(`[Debug] ${singer} +${expToAdd} EXP (唱歌超過 2 分鐘)`);
-    } catch (err) {
-      console.error("給 EXP 失敗：", err);
+    while (level < 90 && exp >= expForNextLevel(level)) {
+      exp -= expForNextLevel(level);
+      level += 1;
     }
+
+    await pool.query(
+      `
+        UPDATE user_room_stats
+        SET level = $1, exp = $2, gold_apples = $3
+        WHERE user_id = $4 AND room = $5
+      `,
+      [level, exp, gold_apples, dbUser.id, room]
+    );
+
+    // 更新記憶體 rooms[room]
+    if (rooms[room]) {
+      const roomUser = rooms[room].find(u => u.name === singer);
+      if (roomUser) {
+        roomUser.level = level;
+        roomUser.exp = exp;
+        roomUser.gold_apples = gold_apples;
+      }
+    }
+
+    io.to(room).emit("updateUsers", rooms[room]);
+    console.log(
+      `[Debug] ${singer} +${expToAdd} EXP, +${applesToAdd} 🍎 (唱歌超過 2 分鐘)`
+    );
+  } catch (err) {
+    console.error("給 EXP 失敗：", err);
   }
+}
 
   function broadcastMicState(room) {
     const state = songState[room];
