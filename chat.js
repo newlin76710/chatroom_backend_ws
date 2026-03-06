@@ -14,6 +14,7 @@ export const aiTimers = {};
 export const videoState = {};
 export const displayQueue = {};
 export const onlineUsers = new Map();
+export const pendingReconnect = new Map();
 // ================= 防洗版 =================
 const userSpamCache = new Map();
 // key: username
@@ -24,6 +25,7 @@ const muteMap = new Map();
 // key: username
 // value: muteUntil (timestamp)
 /* ================= 工具 ================= */
+
 function getClientIP(socket) {
     return socket?.handshake?.headers
         ? socket.handshake.headers["x-forwarded-for"]?.split(",")[0]
@@ -63,13 +65,18 @@ async function logMessage({ room, username, role, message, mode = "public", targ
 export function chatHandlers(io, socket) {
     // --- 進入房間 ---
     socket.on("joinRoom", async ({ room, user }) => {
+        let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
+        // 如果在 reconnect 期間
+        if (pendingReconnect.has(name)) {
+            clearTimeout(pendingReconnect.get(name));
+            pendingReconnect.delete(name);
+
+            console.log("♻️ reconnect restore:", name);
+        }
         const state = getRoomState(room);
         const ip = getClientIP(socket);
         socket.join(room);
-
         if (!rooms[room]) rooms[room] = [];
-
-        let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
         let level = 1, exp = 0, gender = "女", avatar = "/avatars/g01.gif";
         let type = user.type || "guest";
         let token = user.token || "";
@@ -360,7 +367,7 @@ export function chatHandlers(io, socket) {
 
         io.to(room).emit("systemMessage", `${targetName} 被禁言 30 秒`);
     });
-    
+
     // socketHandlers/chat.js 或 server.js
     socket.on("kickUser", async ({ room, targetName }) => {
         console.log("🔹 kickUser received:", room, targetName);
@@ -442,7 +449,15 @@ export function chatHandlers(io, socket) {
     };
 
     socket.on("leaveRoom", removeUser);
-    socket.on("disconnect", removeUser);
+    socket.on("disconnect", () => {
+        const { name, room } = socket.data;
+        const timer = setTimeout(() => {
+            // 10秒後真的離開
+            removeUser();
+            pendingReconnect.delete(name);
+        }, 10000);
+        pendingReconnect.set(name, timer);
+    });
     // ⭐ Heartbeat 事件
     socket.on("heartbeat", () => {
         const name = socket.data.name;
