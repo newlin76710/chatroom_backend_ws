@@ -195,11 +195,11 @@ export const createTransferRouter = (io) => {
 
             // 查該聊天室所有使用者金蘋果數量，排除管理員
             const leaderboardRes = await client.query(
-                `SELECT u.username, urs.gold_apples, u.level
+                `SELECT u.username, urs.gold_apples, urs.level
              FROM users u
              JOIN user_room_stats urs ON u.id = urs.user_id
              WHERE urs.room = $1
-               AND u.level < $2
+               AND urs.level < $2
              ORDER BY urs.gold_apples DESC, u.username ASC
              LIMIT $3`,
                 [ROOM, ANL, TOP_N]
