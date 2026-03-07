@@ -1,6 +1,7 @@
 // transferGold.js
 import express from "express";
 import { pool } from "./db.js";
+import { rooms } from "./chat.js";
 import { authMiddleware } from "./auth.js";
 
 export const createTransferRouter = (io) => {
@@ -12,7 +13,6 @@ export const createTransferRouter = (io) => {
         const client = await pool.connect();
         try {
             const sender = req.user;
-            //console.log("[transfer-gold] sender =", sender);
 
             let { targetUsername, amount } = req.body;
             amount = Number(amount);
@@ -101,14 +101,14 @@ export const createTransferRouter = (io) => {
             // 🔹 廣播給聊天室所有人
             if (io) {
                 // 🔹 更新聊天室金蘋果
-                io.to(ROOM).emit("updateGoldApples", {
-                    username: sender.username,
-                    gold_apples: senderStats.gold_apples - actualTransfer
-                });
-                io.to(ROOM).emit("updateGoldApples", {
-                    username: targetUsername,
-                    gold_apples: targetStats.gold_apples + actualTransfer
-                });
+                const senderMem = rooms[ROOM].find(u => u.name === sender.username);
+                const targetMem = rooms[ROOM].find(u => u.name === targetUsername);
+
+                if (senderMem) senderMem.gold_apples -= actualTransfer;
+                if (targetMem) targetMem.gold_apples += actualTransfer;
+
+                // 廣播整個 user list
+                io.to(ROOM).emit("updateUsers", rooms[ROOM]);
             }
             return res.json({ success: true, requested: amount, transferred: actualTransfer, to: targetUsername });
         } catch (err) {
@@ -162,10 +162,10 @@ export const createTransferRouter = (io) => {
 
             // 🔹 廣播給聊天室所有人
             if (io) {
-                io.to(ROOM).emit("updateGoldApples", {
-                    username,
-                    gold_apples: newAmount
-                });
+                const userMem = rooms[ROOM].find(u => u.name === username);
+                if (userMem) userMem.gold_apples = newAmount;
+                // 廣播整個 user list
+                io.to(ROOM).emit("updateUsers", rooms[ROOM]);
             }
 
             await client.query("COMMIT");
