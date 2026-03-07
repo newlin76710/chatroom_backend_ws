@@ -185,5 +185,34 @@ export const createTransferRouter = (io) => {
             client.release();
         }
     });
+
+    /* ================= 金蘋果排行榜 ================= */
+    router.get("/gold-apple-leaderboard", authMiddleware, async (req, res) => {
+        const client = await pool.connect();
+        try {
+            const TOP_N = parseInt(req.query.top || "30", 10); // 可透過 query ?top=10 調整
+
+            // 查該聊天室所有使用者金蘋果數量，排序取前 N
+            const leaderboardRes = await client.query(
+                `SELECT u.username, urs.gold_apples, u.level
+             FROM users u
+             JOIN user_room_stats urs ON u.id = urs.user_id
+             WHERE urs.room = $1
+             ORDER BY urs.gold_apples DESC, u.username ASC
+             LIMIT $2`,
+                [ROOM, TOP_N]
+            );
+
+            res.json({
+                success: true,
+                leaderboard: leaderboardRes.rows, // [{ username, gold_apples, level }, ...]
+            });
+        } catch (err) {
+            console.error("查詢金蘋果排行榜失敗", err);
+            res.status(500).json({ success: false, error: "查詢失敗" });
+        } finally {
+            client.release();
+        }
+    });
     return router;
 };
