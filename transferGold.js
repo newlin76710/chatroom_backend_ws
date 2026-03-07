@@ -9,6 +9,7 @@ export const createTransferRouter = (io) => {
     const ROOM = process.env.ROOMNAME || "windsong";
     const MAX_GOLD_APPLES = parseInt(process.env.MAX_GOLD_APPLES || "9999", 10);
     const AML = process.env.ADMIN_MAX_LEVEL || 99;
+    const ANL = process.env.ADMIN_MIN_LEVEL || 91;
     router.post("/transfer-gold", authMiddleware, async (req, res) => {
         const client = await pool.connect();
         try {
@@ -192,15 +193,16 @@ export const createTransferRouter = (io) => {
         try {
             const TOP_N = parseInt(req.query.top || "30", 10); // 可透過 query ?top=10 調整
 
-            // 查該聊天室所有使用者金蘋果數量，排序取前 N
+            // 查該聊天室所有使用者金蘋果數量，排除管理員
             const leaderboardRes = await client.query(
                 `SELECT u.username, urs.gold_apples, u.level
              FROM users u
              JOIN user_room_stats urs ON u.id = urs.user_id
              WHERE urs.room = $1
+               AND u.level < $2
              ORDER BY urs.gold_apples DESC, u.username ASC
-             LIMIT $2`,
-                [ROOM, TOP_N]
+             LIMIT $3`,
+                [ROOM, ANL, TOP_N]
             );
 
             res.json({
