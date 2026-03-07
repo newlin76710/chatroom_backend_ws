@@ -406,16 +406,12 @@ authRouter.post("/login", async (req, res) => {
       [user.id, room]
     );
 
-    console.log("[Debug] statsRes:", statsRes.rows);
-
     let level, exp, gold_apples;
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    console.log("[Debug] today:", today);
 
     let rewardApple = 0;
 
     if (!statsRes.rowCount) {
-      console.log("[Debug] 第一次登入");
       level = 2;
       exp = 0;
       gold_apples = 1;
@@ -433,16 +429,12 @@ authRouter.post("/login", async (req, res) => {
       exp = stats.exp;
       gold_apples = stats.gold_apples || 0;
 
-      console.log("[Debug] stats.last_login_reward:", stats.last_login_reward);
-
       // 將資料庫時間轉 YYYY-MM-DD 字串比較
       const lastReward = stats.last_login_reward
         ? stats.last_login_reward.toISOString().slice(0, 10)
         : null;
-      console.log("[Debug] lastReward string:", lastReward);
 
       if (lastReward !== today) {
-        console.log("[Debug] 今天還沒領過金蘋果，加 1 顆");
         rewardApple = 1;
         gold_apples += 1;
 
@@ -453,12 +445,10 @@ authRouter.post("/login", async (req, res) => {
        WHERE user_id=$3 AND room=$4`,
           [gold_apples, today, user.id, room]
         );
-      } else {
-        console.log("[Debug] 今天已經領過金蘋果，不加");
       }
     }
 
-    console.log("[Debug] 最後結果 -> level:", level, "exp:", exp, "gold_apples:", gold_apples, "rewardApple:", rewardApple);
+    console.log("[Debug] 最後結果 -> name:", username, "level:", level, "exp:", exp, "gold_apples:", gold_apples, "rewardApple:", rewardApple);
 
     const now = new Date();
     const token = crypto.randomUUID();
