@@ -406,12 +406,21 @@ authRouter.post("/login", async (req, res) => {
       [user.id, room]
     );
 
+    // 取得台灣今天日期 YYYY-MM-DD
+    function getTaiwanToday() {
+      const now = new Date();
+      const utc = now.getTime() + now.getTimezoneOffset() * 60000; // 轉 UTC
+      const taiwanTime = new Date(utc + 8 * 3600000); // +8 小時
+      return taiwanTime.toISOString().slice(0, 10);
+    }
+
     let level, exp, gold_apples;
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const today = getTaiwanToday();
 
     let rewardApple = 0;
 
     if (!statsRes.rowCount) {
+      // 首次進入房間
       level = 2;
       exp = 0;
       gold_apples = 1;

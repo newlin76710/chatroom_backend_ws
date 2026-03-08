@@ -1,7 +1,7 @@
 import { pool } from "./db.js";
 import { callAI, aiNames, aiProfiles } from "./ai.js";
 import { expForNextLevel } from "./utils.js";
-import { songState } from "./socketHandlers.js";
+import { songState, getRoomState } from "./socketHandlers.js";
 import { ioTokens } from "./auth.js";
 import { addUserIP, removeUserIP } from "./ip.js";
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
@@ -34,20 +34,6 @@ function getClientIP(socket) {
         : socket?.handshake?.address;
 }
 
-function getRoomState(room) {
-    if (!songState[room]) {
-        songState[room] = {
-            queue: [],
-            currentSinger: null,
-            scores: {},
-            listeners: [],
-            phase: "idle",
-            scoreTimer: null,
-        };
-    }
-    return songState[room];
-}
-
 async function logMessage({ room, username, role, message, mode = "public", target = '', message_type = "text", socket }) {
     try {
         const ip = getClientIP(socket);
@@ -67,10 +53,10 @@ export function chatHandlers(io, socket) {
     socket.on("joinRoom", async ({ room, user }) => {
         let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
         // 如果在 reconnect 期間
-        if (pendingReconnect.has(name)) {
-            clearTimeout(pendingReconnect.get(name));
+        const oldTimer = pendingReconnect.get(name);
+        if (oldTimer) {
+            clearTimeout(oldTimer);
             pendingReconnect.delete(name);
-
             console.log("♻️ reconnect restore:", name);
         }
         const state = getRoomState(room);
@@ -164,9 +150,8 @@ export function chatHandlers(io, socket) {
         onlineUsers.set(name, Date.now());
         addUserIP(ip, name);
 
-        // 加入 AI（如果沒加入過）
-        aiNames.forEach(ai => {
-            if (!rooms[room].find(u => u.name === ai)) {
+        if (OPENAI && !rooms[room]._aiInit) {
+            aiNames.forEach(ai => {
                 rooms[room].push({
                     id: ai,
                     name: ai,
@@ -176,16 +161,19 @@ export function chatHandlers(io, socket) {
                     avatar: aiProfiles[ai]?.avatar || null,
                     socketId: null
                 });
-            }
-        });
+            });
+            rooms[room]._aiInit = true;
+        }
 
         // 初始化房間狀態
         if (!roomContext[room]) roomContext[room] = [];
         if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
-        if (!songState[room]) songState[room] = { currentSinger: null, scores: [], scoreTimer: null };
+        if (!songState[room]) getRoomState(room);
 
         // 廣播更新
-        io.to(room).emit("systemMessage", `${name} 進入聊天室`);
+        if (!oldTimer) {
+            io.to(room).emit("systemMessage", `${name} 進入聊天室`);
+        }
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
@@ -420,7 +408,7 @@ export function chatHandlers(io, socket) {
 
     // --- 取得房間使用者 ---
     socket.on("getRoomUsers", (room, callback) => {
-        const users = (rooms[room] || []).filter(u => u.id !== socket.id);
+        const users = (rooms[room] || []);
         callback(users);
     });
 
@@ -432,9 +420,9 @@ export function chatHandlers(io, socket) {
         const { room, name } = socket.data || {};
         if (!room || !rooms[room]) return;
 
-        const wasInRoom = rooms[room].some(u => u.id === socket.id);
+        const wasInRoom = rooms[room].some(u => u.socketId === socket.id);
         const ip = getClientIP(socket);
-        rooms[room] = rooms[room].filter(u => u.id !== socket.id);
+        rooms[room] = rooms[room].filter(u => u.socketId !== socket.id);
         socket.leave(room);
 
         if (name && wasInRoom) {
@@ -455,12 +443,20 @@ export function chatHandlers(io, socket) {
 
     socket.on("leaveRoom", removeUser);
     socket.on("disconnect", () => {
-        const { name, room } = socket.data;
+        const { name } = socket.data || {};
+        if (!name) return;
+
+        // ⭐ 清掉舊 timer
+        const oldTimer = pendingReconnect.get(name);
+        if (oldTimer) {
+            clearTimeout(oldTimer);
+        }
+
         const timer = setTimeout(() => {
-            // 10秒後真的離開
             removeUser();
             pendingReconnect.delete(name);
         }, 10000);
+
         pendingReconnect.set(name, timer);
     });
     // ⭐ Heartbeat 事件

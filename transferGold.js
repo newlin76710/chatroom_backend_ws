@@ -7,7 +7,7 @@ import { authMiddleware } from "./auth.js";
 export const createTransferRouter = (io) => {
     const router = express.Router();
     const ROOM = process.env.ROOMNAME || "windsong";
-    const MAX_GOLD_APPLES = parseInt(process.env.MAX_GOLD_APPLES || "9999", 10);
+    const MAX_GOLD_APPLES = parseInt(process.env.MAX_GOLD_APPLES || "999999999", 10);
     const AML = process.env.ADMIN_MAX_LEVEL || 99;
     const ANL = process.env.ADMIN_MIN_LEVEL || 91;
     router.post("/transfer-gold", authMiddleware, async (req, res) => {
