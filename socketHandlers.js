@@ -2,7 +2,9 @@ import { pool } from "./db.js";
 import { expForNextLevel } from "./utils.js";
 import { rooms, pendingReconnect } from "./chat.js";
 import { AccessToken } from "livekit-server-sdk";
-const pendingMicReconnect = new Map();
+
+export const pendingMicReconnect = new Map(); // 斷線暫存 10 秒
+export const forceStopSet = new Set(); // 強制踢的人 socketId
 export const songState = {};
 export function getRoomState(room) {
   if (!songState[room]) {
@@ -142,18 +144,18 @@ export function songSocket(io, socket) {
     socket.data = { name, room };
     socket.join(`song-${room}`);
     const state = getRoomState(room);
-    // 如果在 10 秒內重連
+
+    // 如果 10 秒內重連，清掉暫存 timer
     const oldTimer = pendingMicReconnect.get(name);
     if (oldTimer) {
       clearTimeout(oldTimer);
       pendingMicReconnect.delete(name);
-      // 更新 queue / currentSinger
-      const q = state.queue.find(u => u.name === name);
-      if (q) q.socketId = socket.id;
-      if (state.currentSinger === name) {
-        state.currentSingerSocketId = socket.id;
-      }
     }
+
+    // 更新 socketId
+    state.queue.forEach(u => { if (u.name === name) u.socketId = socket.id; });
+    if (state.currentSinger === name) state.currentSingerSocketId = socket.id;
+
     broadcastMicState(room);
   });
 
@@ -223,30 +225,26 @@ export function songSocket(io, socket) {
   });
 
   socket.on("forceStopSinger", ({ room, singer }) => {
-    if (!songState[room]) getRoomState(room);
     const state = songState[room];
     if (!state) return;
 
-    // 找到要踢的 socketId
-    const target = state.queue.find(u => u.name === singer) ||
+    let target = state.queue.find(u => u.name === singer && u.socketId) ||
       (state.currentSinger === singer ? { socketId: state.currentSingerSocketId } : null);
 
-    if (!target || !target.socketId) return;
+    if (!target?.socketId) return;
 
-    console.log(`[Debug] 管理員踢下麥: ${singer} in room ${room}`);
+    // 立即踢，不管暫存
+    forceStopSet.add(target.socketId);
 
-    // 如果是正在唱的，直接 force stop
     if (state.currentSinger === singer) {
       giveExpForSinging(room, singer);
-      io.to(target.socketId).emit("forceStopSing");
       state.currentSinger = null;
       state.currentSingerSocketId = null;
       nextSinger(room);
     }
-    // 如果在 queue 中，直接從 queue 移除
+
     state.queue = state.queue.filter(u => u.name !== singer);
-    // 全體更新
-    broadcastMicState(room); // 全體更新
+    broadcastMicState(room);
   });
 
   socket.on("stopSing", ({ room, singer }) => {
@@ -268,19 +266,43 @@ export function songSocket(io, socket) {
     if (!name || !room) return;
     const state = songState[room];
     if (!state) return;
-    // 設定 10 秒 timer
-    const timer = setTimeout(() => {
-      // 超過 10 秒才移除 queue / currentSinger
-      state.queue = state.queue.filter(u => u.name !== name);
-      if (state.currentSinger === name) {
+
+    // 先檢查是否被 forceStop
+    if (forceStopSet.has(socket.id)) {
+      forceStopSet.delete(socket.id);
+      return; // 已被踢，不用暫存
+    }
+
+    // 上麥的人
+    if (state.currentSinger === name && state.currentSingerSocketId === socket.id) {
+      // 設定 10 秒暫存
+      const timer = setTimeout(() => {
+        // 10 秒沒回來才清掉
         state.currentSinger = null;
         state.currentSingerSocketId = null;
         nextSinger(room);
+        broadcastMicState(room);
+        pendingMicReconnect.delete(name);
+      }, 10000);
+
+      pendingMicReconnect.set(name, timer);
+    }
+
+    // 排麥的人
+    state.queue.forEach(u => {
+      if (u.name === name && u.socketId === socket.id) {
+        const timer = setTimeout(() => {
+          state.queue = state.queue.filter(q => q.name !== name);
+          broadcastMicState(room);
+          pendingMicReconnect.delete(name);
+        }, 10000);
+
+        pendingMicReconnect.set(name, timer);
+        u.socketId = null; // 暫時清掉 socketId，保留順序
       }
-      broadcastMicState(room);
-      pendingMicReconnect.delete(name);
-    }, 10000);
-    pendingMicReconnect.set(name, timer);
+    });
+
+    broadcastMicState(room);
   });
 
   socket.on("rateSinger", ({ room, singer, score }) => {
