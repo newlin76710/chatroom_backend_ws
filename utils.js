@@ -1,16 +1,8 @@
-// 等級升級需求費氏數列（最高到 90 級）
+const AML = parseInt(process.env.ADMIN_MIN_LEVEL, 10) || 91;
+// 等級升級需求
 export function expForNextLevel(level) {
-  const MAX_LEVEL = 90;
-  level = Math.min(level, MAX_LEVEL); // 限制最大到 90
+  const MAX_LEVEL = AML-1;
+  level = Math.min(level, MAX_LEVEL);
 
-  let a = 100, b = 100;
-  if (level <= 1) return 100;
-
-  for (let i = 2; i <= level; i++) {
-    const next = a + b;
-    a = b;
-    b = next;
-  }
-
-  return b;
+  return Math.floor(120 * level * level + 200);
 }
