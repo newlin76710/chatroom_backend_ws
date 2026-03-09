@@ -2,7 +2,7 @@ import express from "express";
 import { pool } from "./db.js";
 
 export const nicknameRouter = express.Router();
-const AML = process.env.ADMIN_MIN_LEVEL || 91;
+const ANL = process.env.ADMIN_MIN_LEVEL || 91;
 const ROOM = process.env.ROOMNAME || 'windsong';
 /**
  * middleware — 限制 91~99
@@ -11,7 +11,7 @@ const ROOM = process.env.ROOMNAME || 'windsong';
 const adminOnly = (req, res, next) => {
   const level = req.user?.level;
 
-  if (level < AML) {
+  if (level < ANL) {
     return res.status(403).json({
       error: "權限不足",
     });
