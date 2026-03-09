@@ -5,7 +5,7 @@ import { songState, getRoomState } from "./socketHandlers.js";
 import { ioTokens } from "./auth.js";
 import { addUserIP, removeUserIP } from "./ip.js";
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
-const ANL = process.env.ADMIN_MIN_LEVEL || 91;
+const ANL = parseInt(process.env.ADMIN_MIN_LEVEL, 10) || 91;
 const GUEST = process.env.OPENGUEST === "true";
 const OPENAI = process.env.OPENAI === "true"
 export const aiInit = {};
@@ -249,7 +249,7 @@ export function chatHandlers(io, socket) {
             if (dbUser) {
                 let { level, exp, gold_apples, gender, avatar, account_type } = dbUser;
                 exp += 5;
-                while (level < 90 && exp >= expForNextLevel(level)) {
+                while (level < ANL-1 && exp >= expForNextLevel(level)) {
                     exp -= expForNextLevel(level);
                     level += 1;
                 }

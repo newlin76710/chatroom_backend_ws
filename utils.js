@@ -1,4 +1,4 @@
-const AML = parseInt(process.env.ADMIN_MIN_LEVEL, 10) || 91;
+const ANL = parseInt(process.env.ADMIN_MIN_LEVEL, 10) || 91;
 // 等級升級需求
 export function expForNextLevel(level) {
   const MAX_LEVEL = AML-1;
