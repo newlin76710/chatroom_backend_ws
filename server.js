@@ -176,7 +176,22 @@ setInterval(async () => {
 
 setInterval(() => {
   const now = Date.now();
-
+  for (const room in rooms) {
+    rooms[room] = rooms[room].filter(u =>
+      io.sockets.sockets.has(u.socketId)
+    );
+  }
+  for (const room in songState) {
+    const state = songState[room];
+    if (!state) continue;
+    state.queue = state.queue.filter(u => io.sockets.sockets.has(u.socketId));
+    // 如果上麥的歌手已經斷線，也清掉
+    if (state.currentSingerSocketId && !io.sockets.sockets.has(state.currentSingerSocketId)) {
+      state.currentSinger = null;
+      state.currentSingerSocketId = null;
+      state.currentScore = null;
+    }
+  }
   for (const [name, last] of onlineUsers.entries()) {
     if (now - last > 5 * 60 * 1000) { // 5分鐘沒 heartbeat
       onlineUsers.delete(name);

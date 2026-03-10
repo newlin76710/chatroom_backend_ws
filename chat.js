@@ -100,7 +100,7 @@ export function chatHandlers(io, socket) {
         }
         console.log("🟢 join", room, socket.id, name);
         // 更新 socket.data
-        socket.data = { room, name, level, exp, gold_apples, gender, avatar, type };
+        socket.data = { ...socket.data, room, name, level, exp, gold_apples, gender, avatar, type };
 
         // 🔥 用 token 判斷真正雙開
         if (token) {
@@ -126,7 +126,7 @@ export function chatHandlers(io, socket) {
         // 加入或更新房間列表
         const exists = rooms[room].find(u => u.name === name);
         if (!exists) {
-            rooms[room].push({ id: socket.id, socketId: socket.id, name, type, level, exp, gold_apples, gender, avatar });
+            rooms[room].push({ socketId: socket.id, name, type, level, exp, gold_apples, gender, avatar });
         } else {
             const oldSocket = io.sockets.sockets.get(exists.socketId);
             if (oldSocket) {
@@ -174,7 +174,8 @@ export function chatHandlers(io, socket) {
         if (!songState[room]) getRoomState(room);
 
         // 廣播更新
-        if (!oldTimer) {
+        const isReconnect = !!oldTimer;
+        if (!isReconnect) {
             io.to(room).emit("systemMessage", `${name} 進入聊天室`);
         }
         io.to(room).emit("updateUsers", rooms[room]);
@@ -249,7 +250,7 @@ export function chatHandlers(io, socket) {
             if (dbUser) {
                 let { level, exp, gold_apples, gender, avatar, account_type } = dbUser;
                 exp += 5;
-                while (level < ANL-1 && exp >= expForNextLevel(level)) {
+                while (level < ANL - 1 && exp >= expForNextLevel(level)) {
                     exp -= expForNextLevel(level);
                     level += 1;
                 }
@@ -427,12 +428,6 @@ export function chatHandlers(io, socket) {
         socket.leave(room);
 
         if (name && wasInRoom) {
-            if (songState[room]?.currentSinger === name) {
-                clearTimeout(songState[room].scoreTimer);
-                songState[room].currentSinger = null;
-                songState[room].scoreTimer = null;
-                io.to(room).emit("user-stop-singing", { singer: name });
-            }
             io.to(room).emit("systemMessage", `${name} 離開聊天室`);
             io.to(room).emit("updateUsers", rooms[room]);
             console.log("leave", room, socket.id, name);
@@ -444,20 +439,23 @@ export function chatHandlers(io, socket) {
 
     socket.on("leaveRoom", removeUser);
     socket.on("disconnect", () => {
-        const { name } = socket.data || {};
-        if (!name) return;
-
-        // ⭐ 清掉舊 timer
+        const { name, room } = socket.data || {};
+        if (!name || !room) return;
         const oldTimer = pendingReconnect.get(name);
-        if (oldTimer) {
-            clearTimeout(oldTimer);
-        }
-
+        if (oldTimer) clearTimeout(oldTimer);
         const timer = setTimeout(() => {
+            // ⭐ 檢查是否已經重新登入
+            const stillOnline = rooms[room]?.some(
+                u => u.name === name && u.socketId !== socket.id
+            );
+            if (stillOnline) {
+                console.log("♻️ skip removeUser (reconnected):", name);
+                pendingReconnect.delete(name);
+                return;
+            }
             removeUser();
             pendingReconnect.delete(name);
         }, 10000);
-
         pendingReconnect.set(name, timer);
     });
     // ⭐ Heartbeat 事件

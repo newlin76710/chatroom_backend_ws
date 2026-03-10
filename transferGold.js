@@ -216,5 +216,86 @@ export const createTransferRouter = (io) => {
             client.release();
         }
     });
+    const SHOP_ITEMS = {
+        // rose: { name: "🌹 玫瑰", price: 15, type: "gift" },
+        // firework: { name: "🎆 煙火", price: 50, type: "gift" },
+        // crown: { name: "👑 皇冠", price: 200, type: "gift" },
+        rename: { name: "✏️ 升級卡", price: 1000, type: "levelUp" },
+    };
+    router.post("/shop/buy", authMiddleware, async (req, res) => {
+        const { itemId } = req.body;
+        const buyer = req.user;
+        const item = SHOP_ITEMS[itemId];
+
+        if (!item) return res.status(400).json({ error: "商品暫不開放" });
+
+        const client = await pool.connect();
+        try {
+            await client.query("BEGIN");
+
+            // 查使用者金蘋果和等級
+            const userRes = await client.query(
+                "SELECT id AS user_id, gold_apples, level FROM user_room_stats WHERE user_id = $1 AND room = $2 FOR UPDATE",
+                [buyer.id, ROOM]
+            );
+
+            if (!userRes.rows.length) {
+                await client.query("ROLLBACK");
+                return res.status(400).json({ error: "你在此聊天室不存在金蘋果" });
+            }
+
+            const userStats = userRes.rows[0];
+            if (userStats.gold_apples < item.price) {
+                await client.query("ROLLBACK");
+                return res.status(400).json({ error: "金蘋果不足" });
+            }
+
+            let newLevel = userStats.level;
+            // 升級卡
+            if (item.type === "levelUp") {
+                newLevel = newLevel + 1;
+            }
+
+            // 扣金蘋果 & 更新等級（如果是升級卡）
+            await client.query(
+                "UPDATE user_room_stats SET gold_apples = gold_apples - $1, level = $2 WHERE user_id = $3 AND room = $4",
+                [item.price, newLevel, buyer.id, ROOM]
+            );
+
+            // 更新 rooms 緩存
+            const mem = rooms[ROOM]?.find(u => u.name === buyer.username);
+            if (mem) {
+                mem.gold_apples -= item.price;
+                if (item.type === "levelUp") mem.level = newLevel;
+            }
+
+            // 廣播聊天室訊息
+            if (io) {
+                let systemMsg = "";
+                if (item.type === "levelUp") {
+                    systemMsg = `${buyer.username} 使用升級卡，等級提升到 Lv.${newLevel}`;
+                } else {
+                    systemMsg = `${buyer.username} 使用 ${item.name}`;
+                }
+                io.to(ROOM).emit("systemMessage", systemMsg);
+                io.to(ROOM).emit("updateUsers", rooms[ROOM]);
+            }
+
+            await client.query("COMMIT");
+
+            return res.json({
+                success: true,
+                item: item.name,
+                remaining: userStats.gold_apples - item.price,
+                newLevel: newLevel,
+            });
+        } catch (err) {
+            await client.query("ROLLBACK");
+            console.error("購買失敗", err);
+            return res.status(500).json({ error: "操作失敗" });
+        } finally {
+            client.release();
+        }
+    });
     return router;
 };
