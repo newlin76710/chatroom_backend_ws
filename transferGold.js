@@ -253,6 +253,11 @@ export const createTransferRouter = (io) => {
             let newLevel = userStats.level;
             // 升級卡
             if (item.type === "levelUp") {
+                const MAX_LEVEL = ANL - 1; 
+                if (userStats.level >= MAX_LEVEL) {
+                    await client.query("ROLLBACK");
+                    return res.status(400).json({ error: `已達最高等級 Lv.${MAX_LEVEL}` });
+                }
                 newLevel = newLevel + 1;
             }
 
