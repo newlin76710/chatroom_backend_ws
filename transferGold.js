@@ -273,8 +273,8 @@ export const createTransferRouter = (io) => {
         }
     });
     const SHOP_ITEMS = {
-        rose: { name: "🌹 玫瑰", price: 15, type: "gift", image: "/gifts/rose.gif" },
-        // firework: { name: "🎆 煙火", price: 50, type: "gift" },
+        rose: { name: "🌹 玫瑰", price: 5, type: "gift", image: "/gifts/rose.gif" },
+        firework: { name: "🎆 放煙火", price: 15, type: "firework", image: "/gifts/firework.gif" },
         crown: { name: "👑 皇冠", price: 30, type: "exp", exp: 1000 },
         rename: { name: "✏️ 升級卡", price: 1000, type: "levelUp" },
     };
@@ -316,7 +316,7 @@ export const createTransferRouter = (io) => {
             }
             let newExp = userStats.exp + addExp;
             let newLevel = userStats.level;
- 
+
             while (newExp >= expForNextLevel(newLevel) && newLevel < MAX_LEVEL) {
                 newExp -= expForNextLevel(newLevel);
                 newLevel++;
@@ -350,6 +350,15 @@ export const createTransferRouter = (io) => {
                     // 這裡可放玫瑰大圖 URL 或 GIF
                     imageUrl: item.image,
                     message: `獻上一朵玫瑰 🌹\n${poem}`
+                });
+            }
+            if (item.type === "firework") {
+                // 🔥 滿屏煙花廣播
+                io.to(ROOM).emit("fireworkShow", {
+                    from: buyer.username,
+                    item: item.name,
+                    imageUrl: item.image,
+                    message: `${buyer.username} 施放煙花 🎆 全場慶祝!`
                 });
             }
             // 扣金蘋果 & 更新等級（如果是升級卡）
