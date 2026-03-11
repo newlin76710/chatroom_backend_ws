@@ -3,6 +3,61 @@ import express from "express";
 import { pool } from "./db.js";
 import { rooms } from "./chat.js";
 import { authMiddleware } from "./auth.js";
+const rosePoems = [
+`玫香隨夜落
+花影入窗紅
+輕風傳愛意
+一朵寄君中`,
+
+`春風開玫瑰
+幽香滿小樓
+誰人輕贈我
+笑意在心頭`,
+
+`紅花藏月色
+香氣動人心
+一枝傳遠意
+情到夜深深`,
+
+`玫影搖春夜
+花香入夢長
+君心如月白
+一朵寄柔腸`,
+
+`一枝紅似火
+春意滿人間
+輕贈知心客
+花開笑語間`,
+
+`玫香隨風去
+月色照花枝
+今夜誰相贈
+情深不自知`,
+
+`紅花開小院
+微雨潤芳心
+贈君千里意
+香遠入春林`,
+
+`一朵紅玫瑰
+輕落夜窗前
+不語情先到
+花香滿世間`,
+
+`花開春正好
+玫影動微風
+此意誰相識
+幽香入夢中`,
+
+`紅蕊映燈火
+花香入酒杯
+今宵誰贈我
+一笑滿樓梅`
+];
+
+export function randomRosePoem(){
+  return rosePoems[Math.floor(Math.random()*rosePoems.length)];
+}
 
 export const createTransferRouter = (io) => {
     const router = express.Router();
@@ -217,7 +272,7 @@ export const createTransferRouter = (io) => {
         }
     });
     const SHOP_ITEMS = {
-        // rose: { name: "🌹 玫瑰", price: 15, type: "gift" },
+        rose: { name: "🌹 玫瑰", price: 15, type: "gift", image: "/gifts/rose.gif" },
         // firework: { name: "🎆 煙火", price: 50, type: "gift" },
         // crown: { name: "👑 皇冠", price: 200, type: "gift" },
         rename: { name: "✏️ 升級卡", price: 1000, type: "levelUp" },
@@ -253,14 +308,36 @@ export const createTransferRouter = (io) => {
             let newLevel = userStats.level;
             // 升級卡
             if (item.type === "levelUp") {
-                const MAX_LEVEL = ANL - 1; 
+                const MAX_LEVEL = ANL - 1;
                 if (userStats.level >= MAX_LEVEL) {
                     await client.query("ROLLBACK");
                     return res.status(400).json({ error: `已達升級上限` });
                 }
                 newLevel = newLevel + 1;
             }
+            if (item.type === "gift") {
+                const { targetName } = req.body;
+                if (!targetName) {
+                    await client.query("ROLLBACK");
+                    return res.status(400).json({ error: "請指定要送給誰" });
+                }
 
+                const target = rooms[ROOM]?.find(u => u.name === targetName);
+                if (!target) {
+                    await client.query("ROLLBACK");
+                    return res.status(400).json({ error: "對方不在線上" });
+                }
+                const poem = randomRosePoem();
+                // 廣播專屬禮物訊息
+                io.to(ROOM).emit("giftMessage", {
+                    from: buyer.username,
+                    to: targetName,
+                    item: item.name,
+                    // 這裡可放玫瑰大圖 URL 或 GIF
+                    imageUrl: item.image,
+                    message: `獻上一朵玫瑰 🌹\n${poem}`
+                });
+            }
             // 扣金蘋果 & 更新等級（如果是升級卡）
             await client.query(
                 "UPDATE user_room_stats SET gold_apples = gold_apples - $1, level = $2 WHERE user_id = $3 AND room = $4",
@@ -279,9 +356,7 @@ export const createTransferRouter = (io) => {
                 let systemMsg = "";
                 if (item.type === "levelUp") {
                     systemMsg = `${buyer.username} 使用升級卡，等級提升到 Lv.${newLevel}`;
-                } else {
-                    systemMsg = `${buyer.username} 使用 ${item.name}`;
-                }
+                } 
                 io.to(ROOM).emit("systemMessage", systemMsg);
                 io.to(ROOM).emit("updateUsers", rooms[ROOM]);
             }
