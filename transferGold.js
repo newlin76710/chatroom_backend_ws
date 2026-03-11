@@ -390,6 +390,10 @@ export const createTransferRouter = (io) => {
                     systemMsg = `${buyer.username} 使用升級卡，等級提升到 Lv.${newLevel}`;
                 }
 
+                if (item.type === "firework") {
+                    systemMsg = `${buyer.username} 施放煙花 🎆 全場慶祝!`;
+                }
+                
                 if (systemMsg) {
                     io.to(ROOM).emit("systemMessage", systemMsg);
                 }
