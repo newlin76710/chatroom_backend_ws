@@ -53,36 +53,43 @@ export function chatHandlers(io, socket) {
     // --- 進入房間 ---
     socket.on("joinRoom", async ({ room, user }) => {
         let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
-        // 如果在 reconnect 期間
+
+        // 🔹 reconnect 邏輯
         const oldTimer = pendingReconnect.get(name);
         if (oldTimer) {
             clearTimeout(oldTimer);
             pendingReconnect.delete(name);
             console.log("♻️ reconnect restore:", name);
         }
+
         const state = getRoomState(room);
         const ip = getClientIP(socket);
         socket.join(room);
         if (!rooms[room]) rooms[room] = [];
+
+        // 預設資料
         let level = 1, exp = 0, gender = "女", avatar = "/avatars/g01.gif";
         let type = user.type || "guest";
         let token = user.token || "";
         let gold_apples = 0;
+
         if (type === "guest" && !GUEST) {
             socket.emit("joinFailed", { reason: "本聊天室禁止訪客登入" });
-            socket.disconnect(true); // 🔹 直接斷線，不會進 rooms[room]
+            socket.disconnect(true);
             return;
         }
+
+        // 🔹 讀取資料庫
         try {
             const res = await pool.query(
                 `
-                SELECT u.username, u.gender, u.avatar,
-                    urs.level, urs.exp, urs.gold_apples
-                FROM users u
-                LEFT JOIN user_room_stats urs
-                ON u.id = urs.user_id AND urs.room = $2
-                WHERE u.username = $1
-                `,
+            SELECT u.username, u.gender, u.avatar,
+                urs.level, urs.exp, urs.gold_apples
+            FROM users u
+            LEFT JOIN user_room_stats urs
+            ON u.id = urs.user_id AND urs.room = $2
+            WHERE u.username = $1
+            `,
                 [user.name, room]
             );
             const dbUser = res.rows[0];
@@ -98,46 +105,39 @@ export function chatHandlers(io, socket) {
         } catch (err) {
             console.error("joinRoom取得使用者資料錯誤：", err);
         }
+
         console.log("🟢 join", room, socket.id, name);
+
         // 更新 socket.data
         socket.data = { ...socket.data, room, name, level, exp, gold_apples, gender, avatar, type };
 
-        // 🔥 用 token 判斷真正雙開
+        // 🔹 token 判斷雙開
         if (token) {
             const existing = ioTokens.get(token);
             if (existing && existing.socketId !== socket.id) {
                 const oldSocket = io.sockets.sockets.get(existing.socketId);
                 if (oldSocket) {
-                    oldSocket.emit("forceLogout", {
-                        reason: "帳號已在其他地方登入"
-                    });
+                    oldSocket.emit("forceLogout", { reason: "帳號已在其他地方登入" });
                     oldSocket.disconnect(true);
                     console.log("forceLogout", room, socket.id, name);
                 }
             }
-            // 更新 token 綁定
-            ioTokens.set(token, {
-                username: name,
-                socketId: socket.id,
-                ip
-            });
+            ioTokens.set(token, { username: name, socketId: socket.id, ip });
         }
 
-        // 加入或更新房間列表
-        const exists = rooms[room].find(u => u.name === name);
+        // 🔹 處理房間內使用者列表
+        let isDuplicate = false;
+        const exists = rooms[room].find(u => u.name === name && u.socketId !== socket.id);
         if (!exists) {
             rooms[room].push({ socketId: socket.id, name, type, level, exp, gold_apples, gender, avatar });
         } else {
+            isDuplicate = true;
             const oldSocket = io.sockets.sockets.get(exists.socketId);
             if (oldSocket) {
-                oldSocket.emit("forceLogout", {
-                    reason: "帳號已在其他地方登入"
-                });
+                oldSocket.emit("forceLogout", { reason: "帳號已在其他地方登入" });
                 oldSocket.disconnect(true);
                 console.log("踢掉重複forceLogout", room, exists.socketId, name);
             }
-            // 如果已存在，更新 socketId 或其他資訊
-            exists.id = socket.id;
             exists.socketId = socket.id;
             exists.level = level;
             exists.exp = exp;
@@ -151,6 +151,7 @@ export function chatHandlers(io, socket) {
         onlineUsers.set(name, Date.now());
         addUserIP(ip, name);
 
+        // 🔹 初始化 AI
         if (OPENAI && !aiInit[room]) {
             aiNames.forEach(ai => {
                 rooms[room].push({
@@ -163,21 +164,20 @@ export function chatHandlers(io, socket) {
                     socketId: null
                 });
             });
-
             aiInit[room] = true;
             startAIAutoTalk(io, room);
         }
 
-        // 初始化房間狀態
+        // 🔹 初始化房間狀態
         if (!roomContext[room]) roomContext[room] = [];
         if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
         if (!songState[room]) getRoomState(room);
 
-        // 廣播更新
-        const isReconnect = !!oldTimer;
-        if (!isReconnect) {
+        // 🔹 廣播更新（重複登入不送 systemMessage）
+        if (!isDuplicate && !oldTimer) {
             io.to(room).emit("systemMessage", `${name} 進入聊天室`);
         }
+
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
