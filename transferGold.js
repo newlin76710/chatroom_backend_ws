@@ -3,60 +3,61 @@ import express from "express";
 import { pool } from "./db.js";
 import { rooms } from "./chat.js";
 import { authMiddleware } from "./auth.js";
+import { expForNextLevel } from "./utils.js";
 const rosePoems = [
-`玫香隨夜落
+    `玫香隨夜落
 花影入窗紅
 輕風傳愛意
 一朵寄君中`,
 
-`春風開玫瑰
+    `春風開玫瑰
 幽香滿小樓
 誰人輕贈我
 笑意在心頭`,
 
-`紅花藏月色
+    `紅花藏月色
 香氣動人心
 一枝傳遠意
 情到夜深深`,
 
-`玫影搖春夜
+    `玫影搖春夜
 花香入夢長
 君心如月白
 一朵寄柔腸`,
 
-`一枝紅似火
+    `一枝紅似火
 春意滿人間
 輕贈知心客
 花開笑語間`,
 
-`玫香隨風去
+    `玫香隨風去
 月色照花枝
 今夜誰相贈
 情深不自知`,
 
-`紅花開小院
+    `紅花開小院
 微雨潤芳心
 贈君千里意
 香遠入春林`,
 
-`一朵紅玫瑰
+    `一朵紅玫瑰
 輕落夜窗前
 不語情先到
 花香滿世間`,
 
-`花開春正好
+    `花開春正好
 玫影動微風
 此意誰相識
 幽香入夢中`,
 
-`紅蕊映燈火
+    `紅蕊映燈火
 花香入酒杯
 今宵誰贈我
 一笑滿樓梅`
 ];
 
-export function randomRosePoem(){
-  return rosePoems[Math.floor(Math.random()*rosePoems.length)];
+export function randomRosePoem() {
+    return rosePoems[Math.floor(Math.random() * rosePoems.length)];
 }
 
 export const createTransferRouter = (io) => {
@@ -274,7 +275,7 @@ export const createTransferRouter = (io) => {
     const SHOP_ITEMS = {
         rose: { name: "🌹 玫瑰", price: 15, type: "gift", image: "/gifts/rose.gif" },
         // firework: { name: "🎆 煙火", price: 50, type: "gift" },
-        // crown: { name: "👑 皇冠", price: 200, type: "gift" },
+        crown: { name: "👑 皇冠", price: 30, type: "exp", exp: 1000 },
         rename: { name: "✏️ 升級卡", price: 1000, type: "levelUp" },
     };
     router.post("/shop/buy", authMiddleware, async (req, res) => {
@@ -290,7 +291,7 @@ export const createTransferRouter = (io) => {
 
             // 查使用者金蘋果和等級
             const userRes = await client.query(
-                "SELECT id AS user_id, gold_apples, level FROM user_room_stats WHERE user_id = $1 AND room = $2 FOR UPDATE",
+                "SELECT id AS user_id, gold_apples, level, exp FROM user_room_stats WHERE user_id = $1 AND room = $2 FOR UPDATE",
                 [buyer.id, ROOM]
             );
 
@@ -305,7 +306,19 @@ export const createTransferRouter = (io) => {
                 return res.status(400).json({ error: "金蘋果不足" });
             }
 
+            let addExp = 0;
+            if (item.type === "exp") {
+                addExp = item.exp || 0;
+            }
+            let newExp = userStats.exp + addExp;
             let newLevel = userStats.level;
+
+            const MAX_LEVEL = ANL - 1;
+            while (newExp >= expForNextLevel(newLevel) && newLevel < MAX_LEVEL) {
+                newExp -= expForNextLevel(newLevel);
+                newLevel++;
+            }
+
             // 升級卡
             if (item.type === "levelUp") {
                 const MAX_LEVEL = ANL - 1;
@@ -340,24 +353,36 @@ export const createTransferRouter = (io) => {
             }
             // 扣金蘋果 & 更新等級（如果是升級卡）
             await client.query(
-                "UPDATE user_room_stats SET gold_apples = gold_apples - $1, level = $2 WHERE user_id = $3 AND room = $4",
-                [item.price, newLevel, buyer.id, ROOM]
+                "UPDATE user_room_stats SET gold_apples = gold_apples - $1, level = $2, exp = $3 WHERE user_id = $4 AND room = $5",
+                [item.price, newLevel, newExp, buyer.id, ROOM]
             );
 
             // 更新 rooms 緩存
             const mem = rooms[ROOM]?.find(u => u.name === buyer.username);
             if (mem) {
                 mem.gold_apples -= item.price;
-                if (item.type === "levelUp") mem.level = newLevel;
+                mem.level = newLevel;
+                mem.exp = newExp;
             }
 
             // 廣播聊天室訊息
             if (io) {
                 let systemMsg = "";
+                if (item.type === "exp") {
+                    if (newLevel > userStats.level) {
+                        systemMsg = `${buyer.username} 使用皇冠 👑 獲得 ${addExp} 積分，升級到 Lv.${newLevel}`;
+                    } else {
+                        systemMsg = `${buyer.username} 使用皇冠 👑 獲得 ${addExp} 積分`;
+                    }
+                }
+
                 if (item.type === "levelUp") {
                     systemMsg = `${buyer.username} 使用升級卡，等級提升到 Lv.${newLevel}`;
-                } 
-                io.to(ROOM).emit("systemMessage", systemMsg);
+                }
+
+                if (systemMsg) {
+                    io.to(ROOM).emit("systemMessage", systemMsg);
+                }
                 io.to(ROOM).emit("updateUsers", rooms[ROOM]);
             }
 
