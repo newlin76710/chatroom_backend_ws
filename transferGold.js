@@ -282,7 +282,7 @@ export const createTransferRouter = (io) => {
         const { itemId } = req.body;
         const buyer = req.user;
         const item = SHOP_ITEMS[itemId];
-
+        const MAX_LEVEL = ANL - 1;
         if (!item) return res.status(400).json({ error: "商品暫不開放" });
 
         const client = await pool.connect();
@@ -308,20 +308,21 @@ export const createTransferRouter = (io) => {
 
             let addExp = 0;
             if (item.type === "exp") {
+                if (userStats.level >= MAX_LEVEL) {
+                    await client.query("ROLLBACK");
+                    return res.status(400).json({ error: `已達積分上限` });
+                }
                 addExp = item.exp || 0;
             }
             let newExp = userStats.exp + addExp;
             let newLevel = userStats.level;
-
-            const MAX_LEVEL = ANL - 1;
+ 
             while (newExp >= expForNextLevel(newLevel) && newLevel < MAX_LEVEL) {
                 newExp -= expForNextLevel(newLevel);
                 newLevel++;
             }
-
             // 升級卡
             if (item.type === "levelUp") {
-                const MAX_LEVEL = ANL - 1;
                 if (userStats.level >= MAX_LEVEL) {
                     await client.query("ROLLBACK");
                     return res.status(400).json({ error: `已達升級上限` });
@@ -391,7 +392,7 @@ export const createTransferRouter = (io) => {
             return res.json({
                 success: true,
                 item: item.name,
-                remaining: userStats.gold_apples - item.price,
+                remaining: mem?.gold_apples ?? (userStats.gold_apples - item.price),
                 newLevel: newLevel,
             });
         } catch (err) {
