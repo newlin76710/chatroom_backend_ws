@@ -235,7 +235,7 @@ export const createTransferRouter = (io) => {
     const SHOP_ITEMS = {
         rose: { name: "🌹 玫瑰", price: 5, type: "gift", image: "/gifts/rose.gif" },
         firework: { name: "🎆 放煙火", price: 15, type: "firework", image: "/gifts/firework.gif" },
-        crown: { name: "👑 皇冠", price: 30, type: "exp", exp: 1000 },
+        ball: { name: "🔮 積分球", price: 30, type: "exp", exp: 1000 },
         rename: { name: "✏️ 升級卡", price: 1000, type: "levelUp" },
     };
     router.post("/shop/buy", authMiddleware, async (req, res) => {
@@ -340,9 +340,9 @@ export const createTransferRouter = (io) => {
                 let systemMsg = "";
                 if (item.type === "exp") {
                     if (newLevel > userStats.level) {
-                        systemMsg = `${buyer.username} 使用皇冠 👑 獲得 ${addExp} 積分，升級到 Lv.${newLevel}`;
+                        systemMsg = `${buyer.username} 使用積分球 🔮 獲得 ${addExp} 積分，升級到 Lv.${newLevel}`;
                     } else {
-                        systemMsg = `${buyer.username} 使用皇冠 👑 獲得 ${addExp} 積分`;
+                        systemMsg = `${buyer.username} 使用積分球 🔮 獲得 ${addExp} 積分`;
                     }
                 }
 
