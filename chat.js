@@ -437,10 +437,18 @@ export function chatHandlers(io, socket) {
         removeUserIP(ip, name)
     };
 
-    socket.on("leaveRoom", removeUser);
+    socket.on("leaveRoom", () => {
+        socket.data.manualLeave = true; // ⭐ 主動離開
+        removeUser();
+    });
     socket.on("disconnect", () => {
         const { name, room } = socket.data || {};
         if (!name || !room) return;
+        // ⭐ 如果是自己按 leaveRoom，不做10秒暫存
+        if (socket.data.manualLeave) {
+            removeUser();
+            return;
+        }
         const oldTimer = pendingReconnect.get(name);
         if (oldTimer) clearTimeout(oldTimer);
         const timer = setTimeout(() => {
