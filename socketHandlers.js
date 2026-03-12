@@ -115,11 +115,16 @@ export function songSocket(io, socket) {
     const jwt = await token.toJwt();
     io.to(socketId).emit("livekit-token", { token: jwt, identity });
   }
-
+  function clearSingerTimer(state) {
+    if (state.scoreTimer) {
+      clearTimeout(state.scoreTimer);
+      state.scoreTimer = null;
+    }
+  }
   function nextSinger(room) {
     const state = songState[room];
     if (!state) return;
-
+    clearSingerTimer(state);
     if (state.currentSinger) return; // 有人在唱就不動
 
     const next = state.queue.shift();
@@ -190,6 +195,22 @@ export function songSocket(io, socket) {
     if (!songState[room]) getRoomState(room);
     const state = songState[room];
     state.singStartTime = Date.now();
+    clearSingerTimer(state);
+    state.scoreTimer = setTimeout(() => {
+      if (state.currentSinger === singer) {
+        giveExpForSinging(room, singer);
+
+        state.currentSinger = null;
+        state.currentSingerSocketId = null;
+
+        io.to(`song-${room}`).emit("systemMessage", {
+          message: `${singer} 唱歌時間已達 8 分鐘，自動下麥`
+        });
+
+        broadcastMicState(room);
+        nextSinger(room);
+      }
+    }, 8 * 60 * 1000); // 8 分鐘
     // 如果有人正在唱，先踢掉
     if (state.currentSingerSocketId && state.currentSingerSocketId !== socket.id) {
       io.to(state.currentSingerSocketId).emit("forceStopSing");
@@ -241,6 +262,7 @@ export function songSocket(io, socket) {
     forceStopSet.add(target.socketId);
 
     if (state.currentSinger === singer) {
+      clearSingerTimer(state);
       giveExpForSinging(room, singer);
       state.currentSinger = null;
       state.currentSingerSocketId = null;
@@ -255,7 +277,7 @@ export function songSocket(io, socket) {
     if (!songState[room]) getRoomState(room);
     const state = songState[room];
     if (!state) return;
-
+    clearSingerTimer(state);
     if (state.currentSinger === singer) {
       giveExpForSinging(room, singer);
       state.currentSinger = null;
