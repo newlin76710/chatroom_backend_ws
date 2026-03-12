@@ -164,9 +164,13 @@ export function songSocket(io, socket) {
 
     const state = songState[room];
 
-    // 已在 queue 不重複加入
-    if (state.queue.find(u => u.name === name)) return;
+    const existing = state.queue.find(u => u.name === name);
 
+    if (existing) {
+      existing.socketId = socket.id;
+      console.log(`[Debug] 重連只更新 socket ${name} 加入 song queue ${room}`);
+      return;
+    }
     state.queue.push({
       name,
       socketId: socket.id,
