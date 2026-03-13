@@ -8,10 +8,10 @@ const AML = process.env.ADMIN_MAX_LEVEL || 99;
 const ANL = parseInt(process.env.ADMIN_MIN_LEVEL, 10) || 91;
 const GUEST = process.env.OPENGUEST === "true";
 const OPENAI = process.env.OPENAI === "true"
-export const aiInit = {};
+
+export const aiTimers = {};
 export const rooms = {};
 export const roomContext = {};
-export const aiTimers = {};
 export const videoState = {};
 export const displayQueue = {};
 export const onlineUsers = new Map();
@@ -151,21 +151,21 @@ export function chatHandlers(io, socket) {
         onlineUsers.set(name, Date.now());
         addUserIP(ip, name);
 
-        // 🔹 初始化 AI
-        if (OPENAI && !aiInit[room]) {
+        if (OPENAI) {
+            // 加入 AI（如果沒加入過）
             aiNames.forEach(ai => {
-                rooms[room].push({
-                    id: ai,
-                    name: ai,
-                    type: "AI",
-                    level: aiProfiles[ai]?.level || AML,
-                    gender: aiProfiles[ai]?.gender || "女",
-                    avatar: aiProfiles[ai]?.avatar || null,
-                    socketId: null
-                });
+                if (!rooms[room].find(u => u.name === ai)) {
+                    rooms[room].push({
+                        id: ai,
+                        name: ai,
+                        type: "AI",
+                        level: aiProfiles[ai]?.level || AML,
+                        gender: aiProfiles[ai]?.gender || "女",
+                        avatar: aiProfiles[ai]?.avatar || null,
+                        socketId: null
+                    });
+                }
             });
-            aiInit[room] = true;
-            startAIAutoTalk(io, room);
         }
 
         // 🔹 初始化房間狀態
@@ -181,6 +181,7 @@ export function chatHandlers(io, socket) {
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
+        if (OPENAI) startAIAutoTalk(io, room);
     });
 
     // --- 聊天訊息 ---
@@ -424,7 +425,7 @@ export function chatHandlers(io, socket) {
 
         const wasInRoom = rooms[room].some(u => u.socketId === socket.id);
         const ip = getClientIP(socket);
-        rooms[room] = rooms[room].filter(u => u.socketId !== socket.id);
+        rooms[room] = rooms[room].filter(u => u.type === "AI" || u.socketId !== socket.id);
         socket.leave(room);
 
         if (name && wasInRoom) {
@@ -474,25 +475,88 @@ export function chatHandlers(io, socket) {
     });
 }
 
-// --- AI 自動對話 ---
 export function startAIAutoTalk(io, room) {
+    // 如果已經在跑，就不要再啟動
     if (aiTimers[room]) return;
-    const loop = async () => {
-        const humans = (rooms[room] || []).filter(u => u.type !== "AI");
-        if (!humans.length) {
-            clearTimeout(aiTimers[room]);
-            delete aiTimers[room];
-            return;
+
+    const aiBusy = {}; // key: AI name，避免同時生成回覆
+
+    async function safeCallAI(aiName, prompt) {
+        if (aiBusy[aiName]) return null; // 正在處理，跳過
+        aiBusy[aiName] = true;
+        try {
+            return await callAI(prompt, aiName);
+        } catch (err) {
+            console.error(`AI ${aiName} 回覆失敗:`, err);
+            return null;
+        } finally {
+            aiBusy[aiName] = false;
         }
-        const aiList = (rooms[room] || []).filter(u => u.type === "AI");
-        if (!aiList.length) return;
-        const speaker = aiList[Math.floor(Math.random() * aiList.length)];
-        const reply = await callAI("延續聊天室話題自然聊天", speaker.name);
-        io.to(room).emit("message", {
-            user: { name: speaker.name },
-            message: reply
-        });
-        aiTimers[room] = setTimeout(loop, 30000 + Math.random() * 15000);
-    };
-    aiTimers[room] = setTimeout(loop, 5000);
+    }
+
+    async function loop() {
+        try {
+            // 確保 AI 在房間裡
+            if (!rooms[room]) rooms[room] = [];
+            aiNames.forEach(ai => {
+                if (!rooms[room].find(u => u.name === ai)) {
+                    rooms[room].push({
+                        name: ai,
+                        type: "AI",
+                        level: aiProfiles[ai]?.level || AML,
+                        gender: aiProfiles[ai]?.gender || "女",
+                        avatar: aiProfiles[ai]?.avatar || null,
+                        socketId: null
+                    });
+                }
+            });
+
+            const aiList = (rooms[room] || []).filter(u => u.type === "AI");
+
+            if (aiList.length) {
+                const speaker = aiList[Math.floor(Math.random() * aiList.length)];
+                const context = (roomContext[room] || [])
+                    .slice(-10)
+                    .map(c => `${c.user}:${c.text}`)
+                    .join("\n");
+
+                // 30% 機率 AI 互聊
+                let prompt;
+                if (Math.random() < 0.3 && aiList.length > 1) {
+                    let otherAI;
+                    do {
+                        otherAI = aiList[Math.floor(Math.random() * aiList.length)];
+                    } while (otherAI.name === speaker.name);
+                    prompt = `
+                    聊天室最近聊天：
+                    ${context}
+                    你看到「${otherAI.name}」剛剛講了一句話，
+                    請自然接話聊天
+                                        `;
+                                    } else {
+                                        prompt = `
+                    聊天室最近聊天：
+                    ${context}
+                    請自然加入聊天
+                    `;
+                }
+
+                const reply = await safeCallAI(speaker.name, prompt);
+                if (reply) {
+                    io.to(room).emit("message", { user: { name: speaker.name }, message: reply });
+
+                    if (!roomContext[room]) roomContext[room] = [];
+                    roomContext[room].push({ user: speaker.name, text: reply });
+                    if (roomContext[room].length > 20) roomContext[room].shift();
+                }
+            }
+        } catch (err) {
+            console.error("AI 自動聊天 loop 發生錯誤:", err);
+        } finally {
+            // 無論房間有沒有 AI，都確保下一次 loop 會跑
+            aiTimers[room] = setTimeout(loop, 30000 + Math.random() * 15000);
+        }
+    }
+
+    loop();
 }

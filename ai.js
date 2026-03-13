@@ -33,24 +33,61 @@ aiRouter.post("/reply", async (req, res) => {
 });
 
 export async function callAI(userMessage, aiName) {
-  const p = aiProfiles[aiName] || { style: "中性", desc: "", level: AML, job: "未知職業" };
-  const jobText = p.job ? `她/他的職業是 ${p.job}，` : "";
+  const p = aiProfiles[aiName] || {
+    style: "中性",
+    desc: "",
+    level: AML
+  };
 
   try {
-    const response = await fetch('http://220.135.33.190:11434/v1/completions', {
-      method: 'POST',
+    const response = await fetch("http://220.135.33.190:11434/v1/completions", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "llama3",
         prompt: `
-你是一名叫「${aiName}」的台灣人，個性是：${p.desc}（${p.style}）。
-${jobText}請用繁體中文回覆，省略廢話跟自我介紹，控制在10~30字內：
-「${userMessage}」`,
-        temperature: 0.8
+你現在在一個台灣聊天室。
+
+你的名字是「${aiName}」
+個性：${p.desc}（${p.style}）
+
+聊天室規則：
+- 不要自我介紹
+- 不要描述自己的職業
+- 不要說誰進入聊天室
+- 不要一直問問題
+- 不要提到自己是 AI
+- 回覆要像真人聊天
+- 只說一句話
+- 8~25字
+
+聊天室訊息：
+${userMessage}
+
+自然接一句聊天：
+`,
+        temperature: 0.85,
+        max_tokens: 60
       })
     });
+
     const data = await response.json();
-    return (data.completion || data.choices?.[0]?.text || "嗯～").trim();
+
+    let text = (data.completion || data.choices?.[0]?.text || "嗯～").trim();
+
+    // ⭐ 防止 AI 自我介紹
+    text = text.replace(/我是.+?[，。]/g, "");
+
+    // ⭐ 防止「XXX來了」
+    text = text.replace(/.+來了[！!。]*/g, "");
+
+    // ⭐ 限制長度
+    if (text.length > 35) {
+      text = text.slice(0, 35);
+    }
+
+    return text || "哈哈也是啦";
+
   } catch (e) {
     console.error("callAI error:", e);
     return "我剛剛又 Lag 了一下哈哈。";
