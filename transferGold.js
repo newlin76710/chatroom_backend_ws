@@ -93,6 +93,16 @@ export const createTransferRouter = (io) => {
                 [actualTransfer, targetStats.user_id, ROOM]
             );
 
+            // 🔹 寫入 gift_logs
+            await client.query(
+                `INSERT INTO gift_logs (room, sender, receiver, item_type, amount)
+             VALUES ($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)`,
+                [
+                    ROOM, sender.username, sender.username, "gold_apples", -actualTransfer, // 自己扣
+                    ROOM, sender.username, targetUsername, "gold_apples", actualTransfer    // 對方加
+                ]
+            );
+
             const systemMessage = `${sender.username} 已給 ${targetUsername} ${actualTransfer} 金蘋果 以示獎勵`;
 
             await client.query(
@@ -153,18 +163,19 @@ export const createTransferRouter = (io) => {
 
             await client.query("BEGIN");
 
-            // 🔹 找到目標使用者
+            // 🔹 找到目標使用者，限制只能設定 level 介於 ANL ~ AML 的人
             const targetRes = await client.query(
-                `SELECT u.id AS user_id, urs.gold_apples
-       FROM users u
-       JOIN user_room_stats urs ON u.id = urs.user_id
-       WHERE u.username = $1 AND urs.room = $2 FOR UPDATE`,
-                [username, ROOM]
+                `SELECT u.id AS user_id, urs.gold_apples, urs.level
+             FROM users u
+             JOIN user_room_stats urs ON u.id = urs.user_id
+             WHERE u.username = $1 AND urs.room = $2 AND urs.level BETWEEN $3 AND $4
+             FOR UPDATE`,
+                [username, ROOM, ANL, AML]
             );
 
             if (!targetRes.rows.length) {
                 await client.query("ROLLBACK");
-                return res.status(404).json({ error: "使用者不存在或未加入聊天室" });
+                return res.status(404).json({ error: `使用者不存在、未加入聊天室，或等級不在 ${ANL}~${AML} 範圍` });
             }
 
             const targetId = targetRes.rows[0].user_id;
@@ -202,36 +213,122 @@ export const createTransferRouter = (io) => {
             client.release();
         }
     });
-
-    /* ================= 金蘋果排行榜 ================= */
-    router.get("/gold-apple-leaderboard", authMiddleware, async (req, res) => {
+    /* ================= 積分排行榜 ================= */
+    router.get("/exp-leaderboard", authMiddleware, async (req, res) => {
         const client = await pool.connect();
         try {
-            const TOP_N = parseInt(req.query.top || "30", 10); // 可透過 query ?top=10 調整
-
-            // 查該聊天室所有使用者金蘋果數量，排除管理員
-            const leaderboardRes = await client.query(
-                `SELECT u.username, urs.gold_apples, urs.level
+            const TOP_N = parseInt(req.query.top || "10", 10); // 可透過 query ?top=10 調整
+            // 總排行：level + exp 排序
+            const expRes = await client.query(
+                `SELECT u.username, urs.level, urs.exp, (urs.level*1000000 + urs.exp) AS total_points
              FROM users u
              JOIN user_room_stats urs ON u.id = urs.user_id
              WHERE urs.room = $1
-               AND urs.level < $2
-             ORDER BY urs.gold_apples DESC, u.username ASC
-             LIMIT $3`,
-                [ROOM, ANL, TOP_N]
+             ORDER BY total_points DESC
+             LIMIT $2`,
+                [ROOM, TOP_N]
             );
 
             res.json({
                 success: true,
-                leaderboard: leaderboardRes.rows, // [{ username, gold_apples, level }, ...]
+                leaderboard: expRes.rows
             });
         } catch (err) {
-            console.error("查詢金蘋果排行榜失敗", err);
+            console.error("查詢積分排行榜失敗", err);
             res.status(500).json({ success: false, error: "查詢失敗" });
         } finally {
             client.release();
         }
     });
+
+    router.get("/gold-apple-leaderboard", authMiddleware, async (req, res) => {
+        const client = await pool.connect();
+        try {
+            const { type = "gold_apples", range = "monthly" } = req.query;
+            const TOP_N = parseInt(req.query.top || "10", 10);
+
+            if (!["gold_apples", "rose", "firework"].includes(type)) {
+                return res.status(400).json({ success: false, error: "type 參數錯誤" });
+            }
+
+            const now = new Date();
+            let startDate = null;
+            let endDate = null;
+
+            if (range === "monthly") {
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            } else if (range === "lastMonth") {
+                startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+            }
+
+            let result;
+
+            if (range === "total") {
+                // 總量直接從 user_room_stats 拿值
+                const columnMap = {
+                    gold_apples: "gold_apples",
+                    rose: "rose",
+                    firework: "firework"
+                };
+                const col = columnMap[type];
+
+                const totalRes = await client.query(
+                    `SELECT u.username, urs.${col} AS amount
+                 FROM users u
+                 JOIN user_room_stats urs ON u.id = urs.user_id
+                 WHERE urs.room = $1
+                 ORDER BY urs.${col} DESC
+                 LIMIT $2`,
+                    [ROOM, TOP_N]
+                );
+
+                result = totalRes.rows;
+            } else {
+                // 當月 / 上月 用 gift_logs
+                let query = `
+                SELECT u.username,
+                       SUM(CASE WHEN gl.item_type=$1 THEN gl.amount ELSE 0 END) AS amount
+                FROM users u
+                JOIN gift_logs gl ON u.username = gl.receiver
+                WHERE gl.room = $2
+            `;
+                const params = [type, ROOM];
+
+                if (startDate) {
+                    params.push(startDate);
+                    query += ` AND gl.created_at >= $${params.length}`;
+                }
+                if (endDate) {
+                    params.push(endDate);
+                    query += ` AND gl.created_at <= $${params.length}`;
+                }
+
+                query += `
+                GROUP BY u.username
+                ORDER BY amount DESC
+                LIMIT $${params.length + 1}
+            `;
+                params.push(TOP_N);
+
+                const monthlyRes = await client.query(query, params);
+                result = monthlyRes.rows;
+            }
+
+            res.json({
+                success: true,
+                type,
+                range,
+                leaderboard: result
+            });
+        } catch (err) {
+            console.error("查詢排行榜失敗", err);
+            res.status(500).json({ success: false, error: "查詢失敗" });
+        } finally {
+            client.release();
+        }
+    });
+
     const SHOP_ITEMS = {
         rose: { name: "🌹 玫瑰", price: 5, type: "gift", image: "/gifts/rose.gif" },
         firework: { name: "🎆 放煙火", price: 15, type: "firework", image: "/gifts/firework.gif" },
@@ -302,6 +399,20 @@ export const createTransferRouter = (io) => {
                     return res.status(400).json({ error: "對方不在線上" });
                 }
                 const poem = randomRosePoem();
+                // ⭐ 寫入 gift_logs
+                await client.query(
+                    `INSERT INTO gift_logs (room, sender, receiver, item_type, amount)
+         VALUES ($1, $2, $3, $4, $5)`,
+                    [ROOM, buyer.username, targetName, "rose", 1]
+                );
+                // 🔹 更新 user_room_stats 對方的 rose
+                await client.query(
+                    `UPDATE user_room_stats
+         SET rose = COALESCE(rose, 0) + 1
+         WHERE user_id = (SELECT id FROM users WHERE username = $1)
+           AND room = $2`,
+                    [targetName, ROOM]
+                );
                 // 廣播專屬禮物訊息
                 io.to(ROOM).emit("giftMessage", {
                     from: buyer.username,
@@ -311,8 +422,23 @@ export const createTransferRouter = (io) => {
                     imageUrl: item.image,
                     message: `獻上一朵玫瑰 🌹\n${poem}`
                 });
+                // 🔹 更新 rooms 緩存
+                if (target) target.rose = (target.rose || 0) + 1;
             }
             if (item.type === "firework") {
+                // ⭐ 寫入 gift_logs
+                await client.query(
+                    `INSERT INTO gift_logs (room, sender, receiver, item_type, amount)
+         VALUES ($1, $2, $3, $4, $5)`,
+                    [ROOM, buyer.username, "room", "firework", 1]
+                );
+                // 🔹 更新 user_room_stats 自己的 firework
+                await client.query(
+                    `UPDATE user_room_stats
+         SET firework = COALESCE(firework, 0) + 1
+         WHERE user_id = $1 AND room = $2`,
+                    [buyer.id, ROOM]
+                );
                 // 🔥 滿屏煙花廣播
                 io.to(ROOM).emit("fireworkShow", {
                     from: buyer.username,
@@ -326,13 +452,21 @@ export const createTransferRouter = (io) => {
                 "UPDATE user_room_stats SET gold_apples = gold_apples - $1, level = $2, exp = $3 WHERE user_id = $4 AND room = $5",
                 [item.price, newLevel, newExp, buyer.id, ROOM]
             );
-
+            // 🔹 加入金蘋果紀錄（負值表示自己花掉）
+            await client.query(
+                `INSERT INTO gift_logs (room, sender, receiver, item_type, amount)
+     VALUES ($1, $2, $3, $4, $5)`,
+                [ROOM, buyer.username, buyer.username, "gold_apples", -item.price]
+            );
             // 更新 rooms 緩存
             const mem = rooms[ROOM]?.find(u => u.name === buyer.username);
             if (mem) {
                 mem.gold_apples -= item.price;
                 mem.level = newLevel;
                 mem.exp = newExp;
+                if (item.type === "firework") {
+                    mem.firework = (mem.firework || 0) + 1;
+                }
             }
 
             // 廣播聊天室訊息
