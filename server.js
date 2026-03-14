@@ -178,7 +178,7 @@ setInterval(() => {
   const now = Date.now();
   for (const room in rooms) {
     rooms[room] = rooms[room].filter(u =>
-      io.sockets.sockets.has(u.socketId)
+      u.type === "AI" || io.sockets.sockets.has(u.socketId)
     );
   }
   for (const room in songState) {
