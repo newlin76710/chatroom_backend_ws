@@ -213,20 +213,22 @@ export const createTransferRouter = (io) => {
             client.release();
         }
     });
+    
     /* ================= 積分排行榜 ================= */
     router.get("/exp-leaderboard", authMiddleware, async (req, res) => {
         const client = await pool.connect();
         try {
             const TOP_N = parseInt(req.query.top || "10", 10); // 可透過 query ?top=10 調整
-            // 總排行：level + exp 排序
+
+            // 總排行：level + exp 排序，只選擇 ANL 以下的玩家
             const expRes = await client.query(
                 `SELECT u.username, urs.level, urs.exp, (urs.level*1000000 + urs.exp) AS total_points
              FROM users u
              JOIN user_room_stats urs ON u.id = urs.user_id
-             WHERE urs.room = $1
+             WHERE urs.room = $1 AND urs.level < $2
              ORDER BY total_points DESC
-             LIMIT $2`,
-                [ROOM, TOP_N]
+             LIMIT $3`,
+                [ROOM, ANL, TOP_N]
             );
 
             res.json({
@@ -255,9 +257,8 @@ export const createTransferRouter = (io) => {
             let startDate = null;
             let endDate = null;
 
-            if (range === "monthly") {
-                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-            } else if (range === "lastMonth") {
+            if (range === "monthly") startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            else if (range === "lastMonth") {
                 startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
                 endDate = new Date(now.getFullYear(), now.getMonth(), 0);
             }
@@ -265,35 +266,30 @@ export const createTransferRouter = (io) => {
             let result;
 
             if (range === "total") {
-                // 總量直接從 user_room_stats 拿值
-                const columnMap = {
-                    gold_apples: "gold_apples",
-                    rose: "rose",
-                    firework: "firework"
-                };
+                const columnMap = { gold_apples: "gold_apples", rose: "rose", firework: "firework" };
                 const col = columnMap[type];
 
                 const totalRes = await client.query(
                     `SELECT u.username, urs.${col} AS amount
                  FROM users u
                  JOIN user_room_stats urs ON u.id = urs.user_id
-                 WHERE urs.room = $1
+                 WHERE urs.room = $1 AND urs.level < $2
                  ORDER BY urs.${col} DESC
-                 LIMIT $2`,
-                    [ROOM, TOP_N]
+                 LIMIT $3`,
+                    [ROOM, ANL, TOP_N] // 用 ANL 過濾
                 );
 
                 result = totalRes.rows;
             } else {
-                // 當月 / 上月 用 gift_logs
                 let query = `
                 SELECT u.username,
                        SUM(CASE WHEN gl.item_type=$1 THEN gl.amount ELSE 0 END) AS amount
                 FROM users u
                 JOIN gift_logs gl ON u.username = gl.receiver
-                WHERE gl.room = $2
+                JOIN user_room_stats urs ON u.id = urs.user_id
+                WHERE gl.room = $2 AND urs.level < $3
             `;
-                const params = [type, ROOM];
+                const params = [type, ROOM, ANL];
 
                 if (startDate) {
                     params.push(startDate);
@@ -315,12 +311,7 @@ export const createTransferRouter = (io) => {
                 result = monthlyRes.rows;
             }
 
-            res.json({
-                success: true,
-                type,
-                range,
-                leaderboard: result
-            });
+            res.json({ success: true, type, range, leaderboard: result });
         } catch (err) {
             console.error("查詢排行榜失敗", err);
             res.status(500).json({ success: false, error: "查詢失敗" });
