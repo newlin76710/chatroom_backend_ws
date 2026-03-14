@@ -67,7 +67,12 @@ export function songSocket(io, socket) {
             `,
         [level, exp, gold_apples, dbUser.id, room]
       );
-
+      // 🔹 新增 gift_logs 記錄
+      await pool.query(
+        `INSERT INTO gift_logs (room, sender, receiver, item_type, amount, created_at)
+   VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [room, 'system', singer, 'gold_apples', applesToAdd]
+      );
       // 🔹 更新記憶體
       if (rooms[room]) {
         const roomUser = rooms[room].find(u => u.name === singer);

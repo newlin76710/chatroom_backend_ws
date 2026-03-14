@@ -432,6 +432,12 @@ authRouter.post("/login", async (req, res) => {
      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
         [user.id, user.username, room, level, exp, gold_apples, today]
       );
+      // 🔹 新增 gift_logs 記錄
+      await pool.query(
+        `INSERT INTO gift_logs (room, sender, receiver, item_type, amount, created_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [room, 'system', user.username, 'gold_apples', 1]
+      );
     } else {
       const stats = statsRes.rows[0];
       level = stats.level;
@@ -453,6 +459,12 @@ authRouter.post("/login", async (req, res) => {
            last_login_reward = $2
        WHERE user_id=$3 AND room=$4`,
           [gold_apples, today, user.id, room]
+        );
+        // 🔹 新增 gift_logs 記錄
+        await pool.query(
+          `INSERT INTO gift_logs (room, sender, receiver, item_type, amount, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [room, 'system', user.username, 'gold_apples', 1]
         );
       }
     }
