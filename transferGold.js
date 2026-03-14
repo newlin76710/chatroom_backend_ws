@@ -213,7 +213,7 @@ export const createTransferRouter = (io) => {
             client.release();
         }
     });
-    
+
     /* ================= 積分排行榜 ================= */
     router.get("/exp-leaderboard", authMiddleware, async (req, res) => {
         const client = await pool.connect();
@@ -257,8 +257,9 @@ export const createTransferRouter = (io) => {
             let startDate = null;
             let endDate = null;
 
-            if (range === "monthly") startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-            else if (range === "lastMonth") {
+            if (range === "monthly") {
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            } else if (range === "lastMonth") {
                 startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
                 endDate = new Date(now.getFullYear(), now.getMonth(), 0);
             }
@@ -266,7 +267,12 @@ export const createTransferRouter = (io) => {
             let result;
 
             if (range === "total") {
-                const columnMap = { gold_apples: "gold_apples", rose: "rose", firework: "firework" };
+                // 總量直接從 user_room_stats 拿值，排除 ANL 以上
+                const columnMap = {
+                    gold_apples: "gold_apples",
+                    rose: "rose",
+                    firework: "firework"
+                };
                 const col = columnMap[type];
 
                 const totalRes = await client.query(
@@ -276,18 +282,21 @@ export const createTransferRouter = (io) => {
                  WHERE urs.room = $1 AND urs.level < $2
                  ORDER BY urs.${col} DESC
                  LIMIT $3`,
-                    [ROOM, ANL, TOP_N] // 用 ANL 過濾
+                    [ROOM, ANL, TOP_N]
                 );
 
                 result = totalRes.rows;
             } else {
+                // 當月 / 上月 用 gift_logs + 排除 ANL 以上
                 let query = `
                 SELECT u.username,
                        SUM(CASE WHEN gl.item_type=$1 THEN gl.amount ELSE 0 END) AS amount
                 FROM users u
-                JOIN gift_logs gl ON u.username = gl.receiver
                 JOIN user_room_stats urs ON u.id = urs.user_id
-                WHERE gl.room = $2 AND urs.level < $3
+                JOIN gift_logs gl ON u.username = gl.receiver
+                WHERE gl.room = $2
+                  AND urs.room = $2
+                  AND urs.level < $3
             `;
                 const params = [type, ROOM, ANL];
 
@@ -311,7 +320,12 @@ export const createTransferRouter = (io) => {
                 result = monthlyRes.rows;
             }
 
-            res.json({ success: true, type, range, leaderboard: result });
+            res.json({
+                success: true,
+                type,
+                range,
+                leaderboard: result
+            });
         } catch (err) {
             console.error("查詢排行榜失敗", err);
             res.status(500).json({ success: false, error: "查詢失敗" });
