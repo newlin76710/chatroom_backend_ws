@@ -30,27 +30,26 @@ export const createTransferRouter = (io) => {
         const client = await pool.connect();
         try {
             const sender = req.user;
-
             let { targetUsername, amount } = req.body;
             amount = Number(amount);
 
             if (!sender) return res.status(401).json({ error: "未登入" });
             if (!targetUsername || isNaN(amount) || amount <= 0)
                 return res.status(400).json({ error: "參數錯誤" });
-
             if (targetUsername === sender.username)
                 return res.status(400).json({ error: "不能轉給自己" });
 
             await client.query("BEGIN");
 
-            // 查 sender
+            // 🔹 用 user_id 查 sender stats
             const senderRes = await client.query(
-                `SELECT u.id AS user_id, urs.gold_apples
-         FROM users u
-         JOIN user_room_stats urs ON u.id = urs.user_id
-         WHERE u.username = $1 AND urs.room = $2 FOR UPDATE`,
-                [sender.username, ROOM]
+                `SELECT urs.user_id, urs.gold_apples
+             FROM user_room_stats urs
+             WHERE urs.user_id = $1 AND urs.room = $2
+             FOR UPDATE`,
+                [sender.id, ROOM]
             );
+
             if (!senderRes.rows.length) {
                 await client.query("ROLLBACK");
                 return res.json({ success: false, transferred: 0, reason: "你在此聊天室不存在金蘋果" });
@@ -62,20 +61,35 @@ export const createTransferRouter = (io) => {
                 return res.json({ success: false, transferred: 0, reason: "你的金蘋果不足" });
             }
 
-            // 查 target
-            const targetRes = await client.query(
-                `SELECT u.id AS user_id, urs.gold_apples
-         FROM users u
-         JOIN user_room_stats urs ON u.id = urs.user_id
-         WHERE u.username = $1 AND urs.room = $2 FOR UPDATE`,
-                [targetUsername, ROOM]
+            // 🔹 查 target user_id
+            const targetUserRes = await client.query(
+                `SELECT id AS user_id, username
+             FROM users
+             WHERE username = $1`,
+                [targetUsername]
             );
-            if (!targetRes.rows.length) {
+
+            if (!targetUserRes.rows.length) {
                 await client.query("ROLLBACK");
                 return res.json({ success: false, transferred: 0, reason: "目標使用者不存在" });
             }
 
-            const targetStats = targetRes.rows[0];
+            const targetUser = targetUserRes.rows[0];
+
+            const targetStatsRes = await client.query(
+                `SELECT user_id, gold_apples
+             FROM user_room_stats
+             WHERE user_id = $1 AND room = $2
+             FOR UPDATE`,
+                [targetUser.user_id, ROOM]
+            );
+
+            if (!targetStatsRes.rows.length) {
+                await client.query("ROLLBACK");
+                return res.json({ success: false, transferred: 0, reason: "目標使用者未加入聊天室" });
+            }
+
+            const targetStats = targetStatsRes.rows[0];
             const actualTransfer = Math.min(amount, senderStats.gold_apples, MAX_GOLD_APPLES - targetStats.gold_apples);
 
             if (actualTransfer <= 0) {
@@ -83,61 +97,65 @@ export const createTransferRouter = (io) => {
                 return res.json({ success: false, transferred: 0, reason: "目標使用者金蘋果已達上限或你沒有足夠蘋果" });
             }
 
-            // 更新金蘋果
+            // 🔹 更新金蘋果 (用 user_id)
             await client.query(
-                `UPDATE user_room_stats SET gold_apples = gold_apples - $1 WHERE user_id = $2 AND room = $3`,
+                `UPDATE user_room_stats
+             SET gold_apples = gold_apples - $1
+             WHERE user_id = $2 AND room = $3`,
                 [actualTransfer, senderStats.user_id, ROOM]
             );
+
             await client.query(
-                `UPDATE user_room_stats SET gold_apples = gold_apples + $1 WHERE user_id = $2 AND room = $3`,
+                `UPDATE user_room_stats
+             SET gold_apples = gold_apples + $1
+             WHERE user_id = $2 AND room = $3`,
                 [actualTransfer, targetStats.user_id, ROOM]
             );
 
-            // 🔹 寫入 gift_logs
+            // 🔹 寫入 gift_logs (保留 username)
             await client.query(
                 `INSERT INTO gift_logs (room, sender, receiver, item_type, amount)
              VALUES ($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)`,
                 [
-                    ROOM, sender.username, sender.username, "gold_apples", -actualTransfer, // 自己扣
-                    ROOM, sender.username, targetUsername, "gold_apples", actualTransfer    // 對方加
+                    ROOM, sender.username, sender.username, "gold_apples", -actualTransfer,
+                    ROOM, sender.username, targetUser.username, "gold_apples", actualTransfer
                 ]
             );
 
-            const systemMessage = `${sender.username} 已給 ${targetUsername} ${actualTransfer} 金蘋果 以示獎勵`;
+            const systemMessage = `${sender.username} 已給 ${targetUser.username} ${actualTransfer} 金蘋果 以示獎勵`;
 
             await client.query(
-                `INSERT INTO message_logs
-         (room, username, role, message, message_type, mode, target, created_at, ip)
-         VALUES ($1, $2, 'system', $3, 'system', 'reward', $4, NOW(), '0.0.0.0')`,
-                [ROOM, sender.username, systemMessage, targetUsername]
+                `INSERT INTO message_logs (room, username, role, message, message_type, mode, target, created_at, ip)
+             VALUES ($1, $2, 'system', $3, 'system', 'reward', $4, NOW(), '0.0.0.0')`,
+                [ROOM, sender.username, systemMessage, targetUser.username]
             );
 
             await client.query("COMMIT");
 
-            io.to(ROOM).emit("transferMessage", {
-                room: ROOM,
-                username: sender.username,
-                role: "system",
-                message: systemMessage,
-                message_type: "system",
-                mode: "reward",
-                amount: actualTransfer,
-                target: targetUsername,
-                created_at: new Date(),
-            });
-            // 🔹 廣播給聊天室所有人
+            // 🔹 廣播 socket
             if (io) {
-                // 🔹 更新聊天室金蘋果
-                const senderMem = rooms[ROOM].find(u => u.name === sender.username);
-                const targetMem = rooms[ROOM].find(u => u.name === targetUsername);
+                io.to(ROOM).emit("transferMessage", {
+                    room: ROOM,
+                    username: sender.username,
+                    role: "system",
+                    message: systemMessage,
+                    message_type: "system",
+                    mode: "reward",
+                    amount: actualTransfer,
+                    target: targetUser.username,
+                    created_at: new Date(),
+                });
+
+                const senderMem = rooms[ROOM]?.find(u => u.name === sender.username);
+                const targetMem = rooms[ROOM]?.find(u => u.name === targetUser.username);
 
                 if (senderMem) senderMem.gold_apples -= actualTransfer;
                 if (targetMem) targetMem.gold_apples += actualTransfer;
 
-                // 廣播整個 user list
                 io.to(ROOM).emit("updateUsers", rooms[ROOM]);
             }
-            return res.json({ success: true, requested: amount, transferred: actualTransfer, to: targetUsername });
+
+            return res.json({ success: true, requested: amount, transferred: actualTransfer, to: targetUser.username });
         } catch (err) {
             await client.query("ROLLBACK");
             console.error("金蘋果轉移失敗", err);
