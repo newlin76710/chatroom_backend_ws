@@ -62,10 +62,17 @@ export function chatHandlers(io, socket) {
             console.log("♻️ reconnect restore:", name);
         }
 
+        // 🔹 初始化房間
         const state = getRoomState(room);
         const ip = getClientIP(socket);
         socket.join(room);
         if (!rooms[room]) rooms[room] = [];
+
+        // ⭐ 清理已斷線的 ghost users
+        rooms[room] = rooms[room].filter(u => {
+            if (u.type === "AI") return true; // AI 永遠保留
+            return io.sockets.sockets.has(u.socketId); // 真正存在的 socket 才保留
+        });
 
         // 預設資料
         let level = 1, exp = 0, gender = "女", avatar = "/avatars/g01.gif";
@@ -118,7 +125,7 @@ export function chatHandlers(io, socket) {
                 const oldSocket = io.sockets.sockets.get(existing.socketId);
                 if (oldSocket) {
                     oldSocket.data.forceLogout = true;
-                    oldSocket.emit("forceLogout", { reason: "帳號已在其他地方登入" });
+                    oldSocket.emit("forceLogout", { reason: "帳號現已在其他地方登入" });
                     oldSocket.disconnect(true);
                     console.log("forceLogout", room, socket.id, name);
                 }
