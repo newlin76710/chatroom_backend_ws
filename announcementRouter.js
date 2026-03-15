@@ -10,7 +10,7 @@ export const announcementRouter = express.Router();
 announcementRouter.get("/", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, title, content, updated_by, updated_at
+      `SELECT id, title, content, color, updated_by, updated_at
        FROM announcements where room = $1
        ORDER BY id ASC
        LIMIT 10`, [ROOM]
@@ -26,7 +26,7 @@ announcementRouter.get("/", async (req, res) => {
 /* ===== 更新公告（Lv.99） ===== */
 announcementRouter.post("/update", authMiddleware, async (req, res) => {
   try {
-    const { id, title, content } = req.body; // 需要傳 id 指定要更新哪一則
+    const { id, title, content, color } = req.body; // 需要傳 id 指定要更新哪一則
     const { username, level } = req.user;
 
     if (level < AML) {
@@ -41,9 +41,9 @@ announcementRouter.post("/update", authMiddleware, async (req, res) => {
 
     await pool.query(
       `UPDATE announcements
-       SET title=$1, content=$2, updated_by=$3, updated_at=NOW()
-       WHERE id=$4`,
-      [title, content, username, id]
+       SET title=$1, content=$2, color=$3, updated_by=$4, updated_at=NOW()
+       WHERE id=$5`,
+      [title, content, color, username, id]
     );
 
     res.json({ success: true });
@@ -56,7 +56,7 @@ announcementRouter.post("/update", authMiddleware, async (req, res) => {
 /* ===== 新增公告（Lv.99） ===== */
 announcementRouter.post("/create", authMiddleware, async (req, res) => {
   try {
-    const { title, content } = req.body;
+    const { title, content, color } = req.body;
     const { username, level } = req.user;
 
     if (level < AML) {
@@ -71,9 +71,9 @@ announcementRouter.post("/create", authMiddleware, async (req, res) => {
     }
 
     const insert = await pool.query(
-      `INSERT INTO announcements (title, content, updated_by, updated_at, room)
-       VALUES ($1, $2, $3, NOW(), $4) RETURNING id`,
-      [title, content, username, ROOM]
+      `INSERT INTO announcements (title, content, color, updated_by, updated_at, room)
+       VALUES ($1, $2, $3, $4, NOW(), $5) RETURNING id`,
+      [title, content, username, color, ROOM]
     );
 
     res.json({ success: true, id: insert.rows[0].id });
