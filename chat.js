@@ -117,6 +117,7 @@ export function chatHandlers(io, socket) {
             if (existing && existing.socketId !== socket.id) {
                 const oldSocket = io.sockets.sockets.get(existing.socketId);
                 if (oldSocket) {
+                    oldSocket.data.forceLogout = true;
                     oldSocket.emit("forceLogout", { reason: "帳號已在其他地方登入" });
                     oldSocket.disconnect(true);
                     console.log("forceLogout", room, socket.id, name);
@@ -134,6 +135,7 @@ export function chatHandlers(io, socket) {
             isDuplicate = true;
             const oldSocket = io.sockets.sockets.get(exists.socketId);
             if (oldSocket) {
+                oldSocket.data.forceLogout = true;
                 oldSocket.emit("forceLogout", { reason: "帳號已在其他地方登入" });
                 oldSocket.disconnect(true);
                 console.log("踢掉重複forceLogout", room, exists.socketId, name);
@@ -396,6 +398,7 @@ export function chatHandlers(io, socket) {
 
         onlineUsers.delete(targetName);
         // 2️⃣ 通知前端
+        targetSocket.data.forceLogout = true;
         targetSocket.emit("forceLogout", {
             reason: "你已被管理員踢出"
         });
@@ -444,6 +447,11 @@ export function chatHandlers(io, socket) {
     });
     socket.on("disconnect", () => {
         const { name, room } = socket.data || {};
+        // ⭐ 如果是被踢，不進 reconnect
+        if (socket.data.forceLogout) {
+            removeUser();
+            return;
+        }
         if (!name || !room) return;
         // ⭐ 如果是自己按 leaveRoom，不做10秒暫存
         if (socket.data.manualLeave) {
@@ -533,8 +541,8 @@ export function startAIAutoTalk(io, room) {
                     你看到「${otherAI.name}」剛剛講了一句話，
                     請自然接話聊天
                                         `;
-                                    } else {
-                                        prompt = `
+                } else {
+                    prompt = `
                     聊天室最近聊天：
                     ${context}
                     請自然加入聊天
