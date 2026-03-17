@@ -434,9 +434,10 @@ authRouter.post("/login", async (req, res) => {
       );
       // 🔹 新增 gift_logs 記錄
       await pool.query(
-        `INSERT INTO gift_logs (room, sender, receiver, item_type, amount, created_at)
-     VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [room, 'system', user.username, 'gold_apples', 1]
+        `INSERT INTO gift_logs 
+   (room, sender, receiver, receiver_id, item_type, amount, created_at)
+   VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [room, 'system', user.username, user.id, 'gold_apples', 1]
       );
     } else {
       const stats = statsRes.rows[0];
@@ -462,9 +463,10 @@ authRouter.post("/login", async (req, res) => {
         );
         // 🔹 新增 gift_logs 記錄
         await pool.query(
-          `INSERT INTO gift_logs (room, sender, receiver, item_type, amount, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-          [room, 'system', user.username, 'gold_apples', 1]
+          `INSERT INTO gift_logs 
+   (room, sender, receiver, receiver_id, item_type, amount, created_at)
+   VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [room, 'system', user.username, user.id, 'gold_apples', 1]
         );
       }
     }

@@ -69,9 +69,10 @@ export function songSocket(io, socket) {
       );
       // 🔹 新增 gift_logs 記錄
       await pool.query(
-        `INSERT INTO gift_logs (room, sender, receiver, item_type, amount, created_at)
-   VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [room, 'system', singer, 'gold_apples', applesToAdd]
+        `INSERT INTO gift_logs 
+   (room, sender, receiver, receiver_id, item_type, amount, created_at)
+   VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [room, 'system', singer, dbUser.id, 'gold_apples', applesToAdd]
       );
       // 🔹 更新記憶體
       if (rooms[room]) {

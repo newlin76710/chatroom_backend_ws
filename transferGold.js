@@ -114,11 +114,16 @@ export const createTransferRouter = (io) => {
 
             // 🔹 寫入 gift_logs (保留 username)
             await client.query(
-                `INSERT INTO gift_logs (room, sender, receiver, item_type, amount)
-             VALUES ($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)`,
+                `INSERT INTO gift_logs 
+   (room, sender, sender_id, receiver, receiver_id, item_type, amount)
+   VALUES 
+   ($1, $2, $3, $4, $5, $6, $7),
+   ($8, $9, $10, $11, $12, $13, $14)`,
                 [
-                    ROOM, sender.username, sender.username, "gold_apples", -actualTransfer,
-                    ROOM, sender.username, targetUser.username, "gold_apples", actualTransfer
+                    // sender 扣
+                    ROOM, sender.username, sender.id, sender.username, sender.id, "gold_apples", -actualTransfer,
+                    // receiver 加
+                    ROOM, sender.username, sender.id, targetUser.username, targetUser.user_id, "gold_apples", actualTransfer
                 ]
             );
 
@@ -277,9 +282,12 @@ export const createTransferRouter = (io) => {
 
             if (range === "monthly") {
                 startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-            } else if (range === "lastMonth") {
+                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1); // ✅ 下個月1號
+            }
+
+            if (range === "lastMonth") {
                 startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+                endDate = new Date(now.getFullYear(), now.getMonth(), 1);
             }
 
             let result;
@@ -311,7 +319,7 @@ export const createTransferRouter = (io) => {
                        SUM(CASE WHEN gl.item_type=$1 THEN gl.amount ELSE 0 END) AS amount
                 FROM users u
                 JOIN user_room_stats urs ON u.id = urs.user_id
-                JOIN gift_logs gl ON u.username = gl.receiver
+                JOIN gift_logs gl ON u.id = gl.receiver_id
                 WHERE gl.room = $2
                   AND urs.room = $2
                   AND urs.level < $3
@@ -424,9 +432,12 @@ export const createTransferRouter = (io) => {
                 const poem = randomRosePoem();
                 // ⭐ 寫入 gift_logs
                 await client.query(
-                    `INSERT INTO gift_logs (room, sender, receiver, item_type, amount)
-         VALUES ($1, $2, $3, $4, $5)`,
-                    [ROOM, buyer.username, targetName, "rose", 1]
+                    `INSERT INTO gift_logs 
+   (room, sender, sender_id, receiver, receiver_id, item_type, amount)
+   VALUES ($1, $2, $3, $4, 
+     (SELECT id FROM users WHERE username = $4),
+     $5, $6)`,
+                    [ROOM, buyer.username, buyer.id, targetName, "rose", 1]
                 );
                 // 🔹 更新 user_room_stats 對方的 rose
                 await client.query(
@@ -451,9 +462,10 @@ export const createTransferRouter = (io) => {
             if (item.type === "firework") {
                 // ⭐ 寫入 gift_logs
                 await client.query(
-                    `INSERT INTO gift_logs (room, sender, receiver, item_type, amount)
-         VALUES ($1, $2, $3, $4, $5)`,
-                    [ROOM, buyer.username, "room", "firework", 1]
+                    `INSERT INTO gift_logs 
+   (room, sender, sender_id, receiver, receiver_id, item_type, amount)
+   VALUES ($1, $2, $3, $4, NULL, $5, $6)`,
+                    [ROOM, buyer.username, buyer.id, "room", "firework", 1]
                 );
                 // 🔹 更新 user_room_stats 自己的 firework
                 await client.query(
@@ -477,9 +489,10 @@ export const createTransferRouter = (io) => {
             );
             // 🔹 加入金蘋果紀錄（負值表示自己花掉）
             await client.query(
-                `INSERT INTO gift_logs (room, sender, receiver, item_type, amount)
-     VALUES ($1, $2, $3, $4, $5)`,
-                [ROOM, buyer.username, buyer.username, "gold_apples", -item.price]
+                `INSERT INTO gift_logs 
+   (room, sender, sender_id, receiver, receiver_id, item_type, amount)
+   VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                [ROOM, buyer.username, buyer.id, buyer.username, buyer.id, "gold_apples", -item.price]
             );
             // 更新 rooms 緩存
             const mem = rooms[ROOM]?.find(u => u.name === buyer.username);
