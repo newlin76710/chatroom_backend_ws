@@ -433,22 +433,29 @@ export const createTransferRouter = (io) => {
                 }
                 const poem = randomRosePoem();
                 // ⭐ 寫入 gift_logs
+                const targetRes = await client.query(
+                    `SELECT id FROM users WHERE username = $1`,
+                    [targetName]
+                );
+
+                const receiverId = targetRes.rows[0]?.id;
+                if (!receiverId) {
+                    await client.query("ROLLBACK");
+                    return res.status(400).json({ error: "使用者不存在" });
+                }
                 await client.query(
                     `INSERT INTO gift_logs 
    (room, sender, receiver, receiver_id, item_type, amount)
-   VALUES ($1, $2, $3, 
-     (SELECT id FROM users WHERE username = $3),
-     $4, $5)`,
+   VALUES ($1, $2, $3, $4, $5, $6)`,
 
-                    [ROOM, buyer.username, targetName, "rose", 1]
+                    [ROOM, buyer.username, targetName, receiverId, "rose", 1]
                 );
                 // 🔹 更新 user_room_stats 對方的 rose
                 await client.query(
                     `UPDATE user_room_stats
-         SET rose = COALESCE(rose, 0) + 1
-         WHERE user_id = (SELECT id FROM users WHERE username = $1)
-           AND room = $2`,
-                    [targetName, ROOM]
+   SET rose = COALESCE(rose, 0) + 1
+   WHERE user_id = $1 AND room = $2`,
+                    [receiverId, ROOM]
                 );
                 // 廣播專屬禮物訊息
                 io.to(ROOM).emit("giftMessage", {
