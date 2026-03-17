@@ -115,15 +115,17 @@ export const createTransferRouter = (io) => {
             // 🔹 寫入 gift_logs (保留 username)
             await client.query(
                 `INSERT INTO gift_logs 
-   (room, sender, sender_id, receiver, receiver_id, item_type, amount)
+   (room, sender, receiver, receiver_id, item_type, amount)
    VALUES 
-   ($1, $2, $3, $4, $5, $6, $7),
-   ($8, $9, $10, $11, $12, $13, $14)`,
+   ($1, $2, $3, $4, $5, $6),
+   ($7, $8, $9, $10, $11, $12)`,
+
                 [
                     // sender 扣
-                    ROOM, sender.username, sender.id, sender.username, sender.id, "gold_apples", -actualTransfer,
+                    ROOM, sender.username, sender.username, sender.id, "gold_apples", -actualTransfer,
+
                     // receiver 加
-                    ROOM, sender.username, sender.id, targetUser.username, targetUser.user_id, "gold_apples", actualTransfer
+                    ROOM, sender.username, targetUser.username, targetUser.user_id, "gold_apples", actualTransfer
                 ]
             );
 
@@ -433,11 +435,12 @@ export const createTransferRouter = (io) => {
                 // ⭐ 寫入 gift_logs
                 await client.query(
                     `INSERT INTO gift_logs 
-   (room, sender, sender_id, receiver, receiver_id, item_type, amount)
-   VALUES ($1, $2, $3, $4, 
-     (SELECT id FROM users WHERE username = $4),
-     $5, $6)`,
-                    [ROOM, buyer.username, buyer.id, targetName, "rose", 1]
+   (room, sender, receiver, receiver_id, item_type, amount)
+   VALUES ($1, $2, $3, 
+     (SELECT id FROM users WHERE username = $3),
+     $4, $5)`,
+
+                    [ROOM, buyer.username, targetName, "rose", 1]
                 );
                 // 🔹 更新 user_room_stats 對方的 rose
                 await client.query(
@@ -463,9 +466,10 @@ export const createTransferRouter = (io) => {
                 // ⭐ 寫入 gift_logs
                 await client.query(
                     `INSERT INTO gift_logs 
-   (room, sender, sender_id, receiver, receiver_id, item_type, amount)
-   VALUES ($1, $2, $3, $4, NULL, $5, $6)`,
-                    [ROOM, buyer.username, buyer.id, "room", "firework", 1]
+   (room, sender, receiver, receiver_id, item_type, amount)
+   VALUES ($1, $2, $3, $4, $5, $6)`,
+
+                    [ROOM, buyer.username, buyer.username, buyer.id, "firework", 1]
                 );
                 // 🔹 更新 user_room_stats 自己的 firework
                 await client.query(
@@ -490,9 +494,10 @@ export const createTransferRouter = (io) => {
             // 🔹 加入金蘋果紀錄（負值表示自己花掉）
             await client.query(
                 `INSERT INTO gift_logs 
-   (room, sender, sender_id, receiver, receiver_id, item_type, amount)
-   VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [ROOM, buyer.username, buyer.id, buyer.username, buyer.id, "gold_apples", -item.price]
+     (room, sender, receiver, receiver_id, item_type, amount)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+
+                [ROOM, buyer.username, buyer.username, buyer.id, "gold_apples", -item.price]
             );
             // 更新 rooms 緩存
             const mem = rooms[ROOM]?.find(u => u.name === buyer.username);
