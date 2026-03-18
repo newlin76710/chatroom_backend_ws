@@ -59,15 +59,16 @@ export async function callAI(userMessage, aiName) {
 - 不要提到自己是 AI
 - 回覆要像真人聊天
 - 只說一句話
-- 8~25字
+- 一定要繁體中文
+- 不可以有英文
+- 8~25字最簡短的
 
 聊天室訊息：
 ${userMessage}
 
-自然接一句聊天：
+自然接一句聊天或是開啟另一個合適的話題：
 `,
         temperature: 0.85,
-        max_tokens: 60
       })
     });
 
@@ -80,11 +81,6 @@ ${userMessage}
 
     // ⭐ 防止「XXX來了」
     text = text.replace(/.+來了[！!。]*/g, "");
-
-    // ⭐ 限制長度
-    if (text.length > 35) {
-      text = text.slice(0, 35);
-    }
 
     return text || "哈哈也是啦";
 
