@@ -176,7 +176,7 @@ export const createTransferRouter = (io) => {
         const client = await pool.connect();
         try {
             const admin = req.user;
-            const { username, count } = req.body; // count 直接是要設的數量
+            const { username, count } = req.body;
 
             if (!admin || admin.level < AML)
                 return res.status(403).json({ error: "權限不足" });
@@ -188,52 +188,79 @@ export const createTransferRouter = (io) => {
 
             await client.query("BEGIN");
 
-            // 🔹 找到目標使用者，限制只能設定 level 介於 ANL ~ AML 的人
+            // 🔹 查使用者（含舊金額）
             const targetRes = await client.query(
-                `SELECT u.id AS user_id, urs.gold_apples, urs.level
+                `SELECT u.id AS user_id, u.username, urs.gold_apples, urs.level
              FROM users u
              JOIN user_room_stats urs ON u.id = urs.user_id
-             WHERE u.username = $1 AND urs.room = $2 AND urs.level BETWEEN $3 AND $4
+             WHERE u.username = $1 
+               AND urs.room = $2 
+               AND urs.level BETWEEN $3 AND $4
              FOR UPDATE`,
                 [username, ROOM, ANL, AML]
             );
 
             if (!targetRes.rows.length) {
                 await client.query("ROLLBACK");
-                return res.status(404).json({ error: `使用者不存在、未加入聊天室，或等級不在 ${ANL}~${AML} 範圍` });
+                return res.status(404).json({
+                    error: `使用者不存在、未加入聊天室，或等級不在 ${ANL}~${AML} 範圍`
+                });
             }
 
-            const targetId = targetRes.rows[0].user_id;
+            const target = targetRes.rows[0];
+            const targetId = target.user_id;
+            const oldAmount = target.gold_apples;
 
-            // 🔹 更新金蘋果數量
+            // 🔹 計算差額（核心）
+            const diff = newAmount - oldAmount;
+
+            // 🔹 更新主表
             await client.query(
                 `UPDATE user_room_stats
-       SET gold_apples = $1
-       WHERE user_id = $2 AND room = $3`,
+             SET gold_apples = $1
+             WHERE user_id = $2 AND room = $3`,
                 [newAmount, targetId, ROOM]
             );
 
-            // 🔹 廣播給聊天室所有人
+            // 🔥 補 log（關鍵）
+            if (diff !== 0) {
+                await client.query(
+                    `INSERT INTO gift_logs 
+                 (room, sender, receiver, receiver_id, item_type, amount)
+                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [
+                        ROOM,
+                        admin.username,     // 誰改的
+                        target.username,    // 被改的人
+                        targetId,
+                        "gold_apples",
+                        diff                // 差額（正=補發，負=扣除）
+                    ]
+                );
+            }
+
+            // 🔹 廣播
             if (io) {
-                const userMem = rooms[ROOM].find(u => u.name === username);
+                const userMem = rooms[ROOM]?.find(u => u.name === username);
                 if (userMem) userMem.gold_apples = newAmount;
-                // 廣播整個 user list
+
                 io.to(ROOM).emit("updateUsers", rooms[ROOM]);
             }
 
             await client.query("COMMIT");
 
-            res.json({
+            return res.json({
                 success: true,
                 message: `已將 ${username} 的金蘋果設為 ${newAmount}`,
                 username,
-                gold_apples: newAmount
+                gold_apples: newAmount,
+                diff // 👉 方便你 debug
             });
 
         } catch (err) {
             await client.query("ROLLBACK");
             console.error("設定使用者金蘋果失敗", err);
-            res.status(500).json({ error: "操作失敗" });
+            return res.status(500).json({ error: "操作失敗" });
         } finally {
             client.release();
         }
