@@ -38,56 +38,71 @@ export function songSocket(io, socket) {
     try {
       const res = await pool.query(
         `
-            SELECT u.id, urs.level, urs.exp, urs.gold_apples
-            FROM users u
-            JOIN user_room_stats urs ON u.id = urs.user_id
-            WHERE u.username = $1 AND urs.room = $2
-            `,
+    SELECT u.id, urs.level, urs.exp
+    FROM users u
+    JOIN user_room_stats urs ON u.id = urs.user_id
+    WHERE u.username = $1 AND urs.room = $2
+    `,
         [singer, room]
       );
 
       const dbUser = res.rows[0];
       if (!dbUser) return;
 
-      let { level, exp, gold_apples } = dbUser;
+      let { level, exp } = dbUser;
+
+      // ⭐ EXP 計算
       exp += expToAdd;
-      gold_apples += applesToAdd;
 
       while (level < 90 && exp >= expForNextLevel(level)) {
         exp -= expForNextLevel(level);
         level += 1;
       }
 
-      // 更新 DB
+      // ✅ 1️⃣ 只更新 level / exp
       await pool.query(
         `
-            UPDATE user_room_stats
-            SET level = $1, exp = $2, gold_apples = $3
-            WHERE user_id = $4 AND room = $5
-            `,
-        [level, exp, gold_apples, dbUser.id, room]
+    UPDATE user_room_stats
+    SET level = $1, exp = $2
+    WHERE user_id = $3 AND room = $4
+    `,
+        [level, exp, dbUser.id, room]
       );
-      // 🔹 新增 gift_logs 記錄
+
+      // ✅ 2️⃣ 金蘋果用「累加」
       await pool.query(
-        `INSERT INTO gift_logs 
-   (room, sender, receiver, receiver_id, item_type, amount, created_at)
-   VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        `
+    UPDATE user_room_stats
+    SET gold_apples = gold_apples + $1
+    WHERE user_id = $2 AND room = $3
+    `,
+        [applesToAdd, dbUser.id, room]
+      );
+
+      // ✅ 3️⃣ log（這你原本就對）
+      await pool.query(
+        `
+    INSERT INTO gift_logs 
+    (room, sender, receiver, receiver_id, item_type, amount, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, NOW())
+    `,
         [room, 'system', singer, dbUser.id, 'gold_apples', applesToAdd]
       );
-      // 🔹 更新記憶體
+
+      // 🔹 更新記憶體（用 +，不要覆蓋）
       if (rooms[room]) {
         const roomUser = rooms[room].find(u => u.name === singer);
         if (roomUser) {
           roomUser.level = level;
           roomUser.exp = exp;
-          roomUser.gold_apples = gold_apples;
+          roomUser.gold_apples = (roomUser.gold_apples || 0) + applesToAdd;
         }
       }
 
-      // 🔹 廣播整個使用者列表給前端
       io.to(room).emit("updateUsers", rooms[room]);
 
-      console.log(`[Debug] ${singer} +${expToAdd} EXP, +${applesToAdd} 🍎 (唱歌超過 2 分鐘)`);
+      console.log(`[Debug] ${singer} +${expToAdd} EXP, +${applesToAdd} 🍎`);
+
     } catch (err) {
       console.error("給 EXP 失敗：", err);
     }

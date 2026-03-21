@@ -246,45 +246,55 @@ export function chatHandlers(io, socket) {
         try {
             const res = await pool.query(
                 `
-                SELECT u.id, urs.level, urs.exp, urs.gold_apples, 
-                u.gender, u.avatar, u.account_type
-                FROM users u
-                JOIN user_room_stats urs
-                ON u.id = urs.user_id
-                WHERE u.username = $1
-                AND urs.room = $2
-                `,
+        SELECT u.id, urs.level, urs.exp,
+               u.gender, u.avatar, u.account_type
+        FROM users u
+        JOIN user_room_stats urs
+        ON u.id = urs.user_id
+        WHERE u.username = $1
+        AND urs.room = $2
+        `,
                 [user.name, room]
             );
+
             const dbUser = res.rows[0];
+
             if (dbUser) {
-                let { level, exp, gold_apples, gender, avatar, account_type } = dbUser;
+                let { level, exp, gender, avatar, account_type } = dbUser;
+
                 exp += 5;
+
                 while (level < ANL - 1 && exp >= expForNextLevel(level)) {
                     exp -= expForNextLevel(level);
                     level += 1;
                 }
+
+                // ✅ 不更新 gold_apples
                 await pool.query(
                     `
-                    UPDATE user_room_stats
-                    SET level = $1, exp = $2, gold_apples = $3
-                    WHERE user_id = $4 AND room = $5
-                    `,
-                    [level, exp, gold_apples, dbUser.id, room]
+            UPDATE user_room_stats
+            SET level = $1, exp = $2
+            WHERE user_id = $3 AND room = $4
+            `,
+                    [level, exp, dbUser.id, room]
                 );
+
+                // 🔹 記憶體同步（⚠️ 這裡才拿舊的 gold_apples）
                 if (rooms[room]) {
                     const roomUser = rooms[room].find(u => u.name === user.name);
                     if (roomUser) {
                         roomUser.level = level;
                         roomUser.exp = exp;
-                        roomUser.gold_apples = gold_apples;
+                        // ❌ 不要改 gold_apples
                         roomUser.gender = gender;
                         roomUser.avatar = avatar || roomUser.avatar || "/avatars/g01.gif";
                         roomUser.type = account_type || roomUser.type || "guest";
                     }
                 }
+
                 io.to(room).emit("updateUsers", rooms[room]);
             }
+
         } catch (err) {
             console.error("更新 EXP/LV/使用者資料 失敗：", err);
         }
