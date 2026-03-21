@@ -588,12 +588,11 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
       hashedPassword = await bcrypt.hash(password, 10);
     }
 
-    // 更新資料
     const updateRes = await pool.query(
       `UPDATE users 
-       SET username = $1, password = $2, gender = $3, avatar = $4, phone = $5, email = $6
-       WHERE id = $7
-       RETURNING id, username, gender, avatar, level, exp`,
+     SET username = $1, password = $2, gender = $3, avatar = $4, phone = $5, email = $6
+     WHERE id = $7
+     RETURNING id, username, gender, avatar, level, exp`,
       [
         username || user.username,
         hashedPassword,
@@ -606,9 +605,13 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     );
 
     res.json({ message: "修改成功", user: updateRes.rows[0] });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "修改資料失敗" });
+
+  } catch (err) {
+    if (err.code === "23505") {
+      return res.status(400).json({ error: "使用者名稱已存在" });
+    }
+    console.error("更新使用者失敗", err);
+    res.status(500).json({ error: "操作失敗" });
   }
 });
 
