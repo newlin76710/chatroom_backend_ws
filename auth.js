@@ -454,13 +454,12 @@ authRouter.post("/login", async (req, res) => {
         rewardApple = 1;
         gold_apples += 1;
 
-        await pool.query(
-          `UPDATE user_room_stats
-       SET gold_apples = $1,
-           last_login_reward = $2
-       WHERE user_id=$3 AND room=$4`,
-          [gold_apples, today, user.id, room]
-        );
+        await pool.query(`
+  UPDATE user_room_stats
+  SET gold_apples = gold_apples + 1,
+      last_login_reward = $1
+  WHERE user_id = $2 AND room = $3
+`, [today, user.id, room]);
         // 🔹 新增 gift_logs 記錄
         await pool.query(
           `INSERT INTO gift_logs 
