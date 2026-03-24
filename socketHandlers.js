@@ -202,7 +202,12 @@ export function songSocket(io, socket) {
       socketId: socket.id,
     });
     console.log(`[Debug] ${name} 加入 song queue ${room}`);
-    broadcastMicState(room);
+    // ⭐⭐⭐ 加這段
+    if (!state.currentSinger) {
+      nextSinger(room);
+    } else {
+      broadcastMicState(room);
+    }
   });
   socket.on("leaveQueue", ({ room, name }) => {
     const state = songState[room];
