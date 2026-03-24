@@ -214,7 +214,11 @@ export function songSocket(io, socket) {
     if (!state) return;
 
     state.queue = state.queue.filter(u => u.name !== name);
-    broadcastMicState(room);
+    if (!state.currentSinger) {
+      nextSinger(room);
+    } else {
+      broadcastMicState(room);
+    }
   });
 
   socket.on("grabMic", async ({ room, singer }) => {
