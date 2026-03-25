@@ -361,6 +361,20 @@ export function songSocket(io, socket) {
     broadcastMicState(room);
   });
 
+  socket.on("updateMyName", ({ room, oldName, newName }) => {
+    const state = songState[room];
+    if (!state) return;
+
+    if (state.currentSinger === oldName) {
+      state.currentSinger = newName;
+    }
+    state.queue.forEach(u => {
+      if (u.name === oldName) u.name = newName;
+    });
+
+    broadcastMicState(room);
+  });
+
   socket.on("rateSinger", ({ room, singer, score }) => {
     if (!songState[room]) getRoomState(room);
     const state = songState[room];

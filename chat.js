@@ -492,6 +492,17 @@ export function chatHandlers(io, socket) {
         }, 10000);
         pendingReconnect.set(name, timer);
     });
+    socket.on("updateMyName", ({ room, oldName, newName }) => {
+        if (socket.data.name === oldName) {
+            socket.data.name = newName;
+        }
+        if (rooms[room]) {
+            const u = rooms[room].find(u => u.name === oldName);
+            if (u) u.name = newName;
+            io.to(room).emit("updateUsers", rooms[room]);
+        }
+    });
+
     // ⭐ Heartbeat 事件
     socket.on("heartbeat", () => {
         const name = socket.data.name;
