@@ -290,7 +290,8 @@ export function songSocket(io, socket) {
 
     // 立即踢，不管暫存
     forceStopSet.add(target.socketId);
-
+    io.to(target.socketId).emit("forceStopSing"); 
+    
     if (state.currentSinger === singer) {
       clearSingerTimer(state);
       giveExpForSinging(room, singer);
