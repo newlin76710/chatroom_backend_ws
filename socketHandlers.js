@@ -375,6 +375,27 @@ export function songSocket(io, socket) {
     broadcastMicState(room);
   });
 
+  socket.on("adminForceNext", ({ room }) => {
+    const state = songState[room];
+    if (!state || state.queue.length === 0) return;
+
+    // 踢掉現任演唱者
+    if (state.currentSingerSocketId) {
+      io.to(state.currentSingerSocketId).emit("forceStopSing");
+      clearSingerTimer(state);
+      giveExpForSinging(room, state.currentSinger);
+    }
+
+    // 推上下一位
+    const next = state.queue.shift();
+    state.currentSinger = next.name;
+    state.currentSingerSocketId = next.socketId;
+    state.currentScore = { total: 0, count: 0 };
+
+    io.to(next.socketId).emit("yourTurn", {});
+    broadcastMicState(room);
+  });
+
   socket.on("rateSinger", ({ room, singer, score }) => {
     if (!songState[room]) getRoomState(room);
     const state = songState[room];
