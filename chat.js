@@ -129,42 +129,44 @@ export function chatHandlers(io, socket) {
             type
         };
 
-        /* =========================
-           ⭐ 單登入控制（唯一來源）
-        ========================= */
-        for (const [key, data] of ioTokens.entries()) {
-            // 找到相同 username 的舊連線，但不是自己
-            if (data.username === name && data.socketId !== socket.id) {
-                const oldSocket = io.sockets.sockets.get(data.socketId);
-                if (oldSocket) {
-                    console.log("👢 踢舊連線:", name);
-                    // ⭐ 標記舊 socket 被踢
-                    oldSocket.data.forceLogout = true;
-                    // ⭐ 清理舊 socket 的 reconnect timer
-                    const oldTimer = pendingReconnect.get(name);
-                    if (oldTimer) {
-                        clearTimeout(oldTimer);
-                        pendingReconnect.delete(name);
-                    }
-                    // ⭐ 通知前端被踢
-                    oldSocket.emit("forceLogout", {
-                        reason: "帳號現已在其他地方登入"
-                    });
-                    // ⭐ 強制斷線
-                    oldSocket.disconnect(true);
+        // ⭐ 單登入控制（唯一來源，username 判斷）
+        const oldSessions = [...ioTokens.entries()]
+            .filter(([_, data]) => data.username === name);
+
+        for (const [oldToken, oldData] of oldSessions) {
+            if (oldData.socketId === socket.id) continue; // 自己跳過
+
+            const oldSocket = io.sockets.sockets.get(oldData.socketId);
+            if (oldSocket) {
+                console.log("👢 踢舊連線:", name);
+
+                // 標記被踢
+                oldSocket.data = oldSocket.data || {};
+                oldSocket.data.forceLogout = true;
+
+                // 清理 reconnect timer
+                const oldTimer = pendingReconnect.get(name);
+                if (oldTimer) {
+                    clearTimeout(oldTimer);
+                    pendingReconnect.delete(name);
                 }
-                // ⭐ 刪掉舊 token
-                ioTokens.delete(key);
+
+                // 發送強制登出通知
+                oldSocket.emit("forceLogout", {
+                    reason: "帳號現已在其他地方登入"
+                });
+
+                // 強制斷線
+                oldSocket.disconnect(true);
             }
+
+            // 刪掉舊 token
+            ioTokens.delete(oldToken);
         }
-        // ⭐ 註冊 / 覆蓋 token
+
+        // ⭐ 註冊新連線（如果有 token 才存）
         if (token) {
-            ioTokens.set(token, {
-                username: name,
-                socketId: socket.id,
-                ip,
-                ts: Date.now()
-            });
+            ioTokens.set(token, { username: name, socketId: socket.id, ip, ts: Date.now() });
         }
 
         /* =========================
