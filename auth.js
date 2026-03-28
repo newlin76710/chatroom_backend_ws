@@ -510,21 +510,38 @@ authRouter.post("/login", async (req, res) => {
   }
 });
 
-/* ================= 登出 ================= */
 authRouter.post("/logout", async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
   try {
-    const { username } = req.body;
-    if (!username) return res.status(400).json({ error: "缺少 username" });
-    // 移除 token
-    for (const [token, data] of ioTokens.entries()) {
-      if (data.username === username) ioTokens.delete(token);
+    // ✅ 從 header 拿 token（標準做法）
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.replace("Bearer ", "");
+    if (!token) {
+      return res.status(400).json({ error: "缺少 token" });
     }
-    onlineUsers.delete(username);
-    removeUserIP(ip, username);
-    await logLogin({ username, loginType: "logout", ip, userAgent, success: true });
-
+    const data = ioTokens.get(token);
+    if (!data) {
+      return res.status(200).json({ success: true, message: "token 已失效" });
+    }
+    const { username } = data;
+    // ✅ 只刪「這個 token」
+    ioTokens.delete(token);
+    // ⚠️ 只有當「沒有其他 token」時才真的離線
+    const stillOnline = [...ioTokens.values()].some(
+      (u) => u.username === username
+    );
+    if (!stillOnline) {
+      onlineUsers.delete(username);
+      removeUserIP(ip, username);
+    }
+    await logLogin({
+      username,
+      loginType: "logout",
+      ip,
+      userAgent,
+      success: true,
+    });
     res.json({ success: true, message: `${username} 已登出` });
   } catch (err) {
     console.error(err);
