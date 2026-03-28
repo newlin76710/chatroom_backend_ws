@@ -29,6 +29,7 @@ const muteMap = new Map();
 const expTimers = new Map();
 // ⭐ 統一計算 EXP / LV 的函數
 async function addExp(io, username, room, expToAdd) {
+    if (!rooms[room] || !rooms[room].length) return;
     const userRoom = rooms[room]?.find(u => u.name === username);
     if (!userRoom) return;
 
