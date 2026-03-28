@@ -10,7 +10,7 @@ import { adminRouter } from "./admin.js";
 import { authRouter, ioTokens } from "./auth.js";
 import { aiRouter } from "./ai.js";
 import { songState } from "./socketHandlers.js";
-import { rooms, chatHandlers, onlineUsers } from "./chat.js";
+import { rooms, chatHandlers, onlineUsers, startExpAutoTimer } from "./chat.js";
 import { songSocket } from "./socketHandlers.js";
 import { quickPhrasesRouter } from "./quickPhrase.js";
 import { ipRouter } from "./blockIP.js";
@@ -136,15 +136,13 @@ app.get("/livekit-token", async (req, res) => {
 //////////////////////////////////////////////////////
 
 io.on("connection", socket => {
-
   console.log(`🟢 socket connected: ${socket.id}`);
-
   // 聊天
   chatHandlers(io, socket);
-
   // 唱歌
   songSocket(io, socket);
-
+  // 啟動自動加 EXP
+  startExpAutoTimer(io);
   socket.on("disconnect", reason => {
     console.log(`🔴 socket disconnected: ${socket.id}`, reason);
   });

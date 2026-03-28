@@ -28,7 +28,7 @@ const muteMap = new Map();
 /* ================= 工具 ================= */
 const expTimers = new Map();
 // ⭐ 統一計算 EXP / LV 的函數
-async function addExp(username, room, expToAdd) {
+async function addExp(io, username, room, expToAdd) {
     const userRoom = rooms[room]?.find(u => u.name === username);
     if (!userRoom) return;
 
@@ -61,22 +61,24 @@ async function addExp(username, room, expToAdd) {
     // 廣播前端
     io.to(room).emit("updateUsers", rooms[room]);
 }
-// 每分鐘檢查一次
-setInterval(() => {
-    const now = Date.now();
-    for (const [username, lastTime] of expTimers.entries()) {
-        if (now - lastTime >= 30 * 60 * 1000) { // 30 分鐘
-            for (const [room, users] of Object.entries(rooms)) {
-                const user = users.find(u => u.name === username);
-                if (user) {
-                    addExp(username, room, 10); // 自動加 10 EXP
-                    expTimers.set(username, now);
-                    break;
+/* ================= 每分鐘自動加 EXP ================= */
+export function startExpAutoTimer(io) {
+    setInterval(() => {
+        const now = Date.now();
+        for (const [username, lastTime] of expTimers.entries()) {
+            if (now - lastTime >= 30 * 60 * 1000) { // 30 分鐘
+                for (const [room, users] of Object.entries(rooms)) {
+                    const user = users.find(u => u.name === username);
+                    if (user) {
+                        addExp(io, username, room, 10); // 自動加 10 EXP
+                        expTimers.set(username, now);
+                        break;
+                    }
                 }
             }
         }
-    }
-}, 60 * 1000);
+    }, 60 * 1000);
+}
 
 function getClientIP(socket) {
     return socket?.handshake?.headers
@@ -262,7 +264,7 @@ export function chatHandlers(io, socket) {
             io.to(room).emit("message", msgPayload);
         }
 
-        await addExp(user.name, room, 5);
+        await addExp(io, user.name, room, 5);
 
         // ⭐ 寫入 DB（使用者）
         await logMessage({
