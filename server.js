@@ -10,7 +10,7 @@ import { adminRouter } from "./admin.js";
 import { authRouter, ioTokens } from "./auth.js";
 import { aiRouter } from "./ai.js";
 import { songState } from "./socketHandlers.js";
-import { rooms, chatHandlers, onlineUsers, startExpAutoTimer } from "./chat.js";
+import { rooms, chatHandlers, onlineUsers } from "./chat.js";
 import { songSocket } from "./socketHandlers.js";
 import { quickPhrasesRouter } from "./quickPhrase.js";
 import { ipRouter } from "./blockIP.js";
@@ -146,8 +146,6 @@ io.on("connection", socket => {
   });
 });
 
-// 啟動自動加 EXP
-startExpAutoTimer(io);
 //////////////////////////////////////////////////////
 // ⭐⭐⭐⭐⭐ 防 Render 睡死（只保護 container）
 //////////////////////////////////////////////////////
