@@ -52,11 +52,11 @@ async function logMessage({ room, username, role, message, mode = "public", targ
 export function chatHandlers(io, socket) {
     // --- 進入房間 ---
     socket.on("joinRoom", async ({ room, user }) => {
-        const token = user.token || "";
+        const token = user.token || null;
         let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
         const ip = getClientIP(socket);
-        console.log("token, name:", token, name);
-        // 🔹 reconnect restore
+
+        // 🔹 重連 restore
         const oldTimer = pendingReconnect.get(name);
         if (oldTimer) {
             clearTimeout(oldTimer);
@@ -67,7 +67,7 @@ export function chatHandlers(io, socket) {
         socket.join(room);
         if (!rooms[room]) rooms[room] = [];
 
-        // ⭐ 清理已斷線的 ghost users
+        // 清理 ghost user
         rooms[room] = rooms[room].filter(u => u.type === "AI" || io.sockets.sockets.has(u.socketId));
 
         // 預設資料
@@ -81,7 +81,7 @@ export function chatHandlers(io, socket) {
             return;
         }
 
-        // 🔹 從 DB 取得資料
+        // 從 DB 取得資料
         try {
             const res = await pool.query(`
             SELECT u.username, u.gender, u.avatar, urs.level, urs.exp, urs.gold_apples
@@ -109,7 +109,7 @@ export function chatHandlers(io, socket) {
         // ⭐ 設定 socket.data
         socket.data = { ...socket.data, room, name, token, level, exp, gold_apples, gender, avatar, type };
 
-        // ⭐ 踢掉同名舊 socket
+        // ⭐ 踢掉同名舊 socket（forceLogout）
         const oldUser = rooms[room].find(u => u.name === name && u.socketId !== socket.id);
         if (oldUser) {
             const oldSocket = io.sockets.sockets.get(oldUser.socketId);
@@ -117,15 +117,15 @@ export function chatHandlers(io, socket) {
                 oldSocket.data = oldSocket.data || {};
                 oldSocket.data.forceLogout = true;
                 oldSocket.emit("forceLogout", { reason: "帳號已在其他地方登入" });
-                oldSocket.disconnect(true);
+                oldSocket.disconnect(true); // 斷線時才會刪 token
             }
             rooms[room] = rooms[room].filter(u => u.socketId !== oldUser.socketId);
         }
 
-        // ⭐ 註冊新連線 token
+        // ⭐ 註冊新 socket token
         if (token) ioTokens.set(token, { username: name, socketId: socket.id, ip, ts: Date.now() });
 
-        // ⭐ rooms 更新或新增
+        // rooms 更新
         let existing = rooms[room].find(u => u.name === name);
         if (!existing) {
             rooms[room].push({ socketId: socket.id, name, type, level, exp, gold_apples, gender, avatar });
@@ -140,19 +140,20 @@ export function chatHandlers(io, socket) {
             existing.type = type;
         }
 
-        // ⭐ 更新 onlineUsers / IP
+        // onlineUsers / IP
         onlineUsers.set(name, Date.now());
         addUserIP(ip, name);
 
-        // ⭐ 初始化房間狀態
+        // 初始化房間狀態
         if (!roomContext[room]) roomContext[room] = [];
         if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
         if (!songState[room]) getRoomState(room);
 
-        // ⭐ 廣播
+        // 廣播更新
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
+        if (OPENAI) startAIAutoTalk(io, room);
     });
 
     // --- 聊天訊息 ---
@@ -399,14 +400,14 @@ export function chatHandlers(io, socket) {
 
     // ================== 離開房間 ==================
     const removeUser = () => {
-        if (socket.data.hasLeft) return; // 避免重複
+        if (socket.data.hasLeft) return;
         socket.data.hasLeft = true;
 
-        const { room, name } = socket.data || {};
+        const { room, name, token } = socket.data || {};
         if (!room || !rooms[room]) return;
 
         const wasInRoom = rooms[room].some(u => u.socketId === socket.id);
-        const ip = getClientIP(socket);
+
         rooms[room] = rooms[room].filter(u => u.type === "AI" || u.socketId !== socket.id);
         socket.leave(room);
 
@@ -415,39 +416,40 @@ export function chatHandlers(io, socket) {
             io.to(room).emit("updateUsers", rooms[room]);
             console.log("leave", room, socket.id, name);
         }
-        if (!name) return;
-        onlineUsers.delete(name);
-        removeUserIP(ip, name)
+
+        if (name) onlineUsers.delete(name);
+        removeUserIP(getClientIP(socket), name);
+
+        // ⭐ 只刪自己的 token
+        if (token) {
+            const current = ioTokens.get(token);
+            if (current && current.socketId === socket.id) {
+                ioTokens.delete(token);
+            }
+        }
     };
 
     socket.on("leaveRoom", () => {
-        socket.data.manualLeave = true; // ⭐ 主動離開
+        socket.data.manualLeave = true;
         removeUser();
     });
 
     socket.on("disconnect", () => {
-        const { name, room, token } = socket.data || {};
+        const { forceLogout, manualLeave, name } = socket.data || {};
 
-        // ⭐ 被踢 → 不進 reconnect
-        if (socket.data.forceLogout) {
-            cleanup();
+        if (forceLogout || manualLeave) {
+            removeUser();
             return;
         }
 
-        // ⭐ 主動離開 → 不暫存
-        if (socket.data.manualLeave) {
-            cleanup();
-            return;
-        }
+        if (!name) return;
 
-        if (!name || !room) return;
-
-        // ⭐ reconnect 機制（10 秒）
+        // reconnect 機制 10 秒
         const oldTimer = pendingReconnect.get(name);
         if (oldTimer) clearTimeout(oldTimer);
 
         const timer = setTimeout(() => {
-            const stillOnline = rooms[room]?.some(
+            const stillOnline = rooms[socket.data.room]?.some(
                 u => u.name === name && u.socketId !== socket.id
             );
 
@@ -457,45 +459,11 @@ export function chatHandlers(io, socket) {
                 return;
             }
 
-            cleanup();
+            removeUser();
             pendingReconnect.delete(name);
         }, 10000);
 
         pendingReconnect.set(name, timer);
-
-        /* ========================= */
-
-        function cleanup() {
-            if (socket.data.hasLeft) return;
-            socket.data.hasLeft = true;
-
-            if (!rooms[room]) return;
-
-            const wasInRoom = rooms[room].some(u => u.socketId === socket.id);
-
-            rooms[room] = rooms[room].filter(
-                u => u.type === "AI" || u.socketId !== socket.id
-            );
-
-            socket.leave(room);
-
-            if (name && wasInRoom) {
-                io.to(room).emit("systemMessage", `${name} 離開聊天室`);
-                io.to(room).emit("updateUsers", rooms[room]);
-                console.log("leave", room, socket.id, name);
-            }
-
-            onlineUsers.delete(name);
-            removeUserIP(getClientIP(socket), name);
-
-            // ⭐⭐ 關鍵：只刪「自己的 token」
-            if (token) {
-                const current = ioTokens.get(token);
-                if (current && current.socketId === socket.id) {
-                    ioTokens.delete(token);
-                }
-            }
-        }
     });
 
     socket.on("updateMyName", ({ room, oldName, newName }) => {
