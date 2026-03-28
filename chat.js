@@ -132,37 +132,31 @@ export function chatHandlers(io, socket) {
         /* =========================
            ⭐ 單登入控制（唯一來源）
         ========================= */
+        const oldSessions = [...ioTokens.entries()]
+            .filter(([t, data]) => data.username === name);
 
-        const existingEntry = [...ioTokens.entries()]
-            .find(([t, data]) => data.username === name);
+        for (const [oldToken, oldData] of oldSessions) {
+            if (oldData.socketId === socket.id) continue;
 
-        if (existingEntry) {
-            const [oldToken, oldData] = existingEntry;
+            const oldSocket = io.sockets.sockets.get(oldData.socketId);
 
-            if (oldData.socketId && oldData.socketId !== socket.id) {
-                const oldSocket = io.sockets.sockets.get(oldData.socketId);
+            if (oldSocket) {
+                console.log("👢 踢舊連線:", name);
 
-                if (oldSocket) {
-                    console.log("👢 踢舊連線:", name);
+                oldSocket.data.forceLogout = true;
 
-                    oldSocket.data.forceLogout = true;
-
-                    // ⭐ 清 reconnect（超關鍵）
-                    const timer = pendingReconnect.get(name);
-                    if (timer) {
-                        clearTimeout(timer);
-                        pendingReconnect.delete(name);
-                    }
-
-                    oldSocket.emit("forceLogout", {
-                        reason: "帳號現已在其他地方登入"
-                    });
-
-                    oldSocket.disconnect(true);
+                const timer = pendingReconnect.get(name);
+                if (timer) {
+                    clearTimeout(timer);
+                    pendingReconnect.delete(name);
                 }
-            }
 
-            // ❗ 不刪 token（避免 invalid token）
+                oldSocket.emit("forceLogout", {
+                    reason: "帳號現已在其他地方登入"
+                });
+
+                oldSocket.disconnect(true);
+            }
         }
 
         // ⭐ 註冊 / 覆蓋 token
@@ -496,7 +490,7 @@ export function chatHandlers(io, socket) {
         socket.data.manualLeave = true; // ⭐ 主動離開
         removeUser();
     });
-    
+
     socket.on("disconnect", () => {
         const { name, room, token } = socket.data || {};
 

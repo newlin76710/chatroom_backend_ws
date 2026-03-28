@@ -482,6 +482,12 @@ authRouter.post("/login", async (req, res) => {
     }
 
     onlineUsers.set(username, Date.now());
+    // ⭐ 清掉同 username 的舊 token（避免殘留）
+    for (const [oldToken, data] of ioTokens.entries()) {
+      if (data.username === username) {
+        ioTokens.delete(oldToken);
+      }
+    }
     ioTokens.set(token, { username, socketId: null, ip });
 
     await logLogin({ userId: user.id, username: user.username, loginType: "normal", ip, userAgent, success: true });
