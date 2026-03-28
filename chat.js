@@ -52,11 +52,11 @@ async function logMessage({ room, username, role, message, mode = "public", targ
 export function chatHandlers(io, socket) {
     // --- 進入房間 ---
     socket.on("joinRoom", async ({ room, user }) => {
-        let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
         const token = user.token || "";
+        let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
         const ip = getClientIP(socket);
 
-        // 🔹 reconnect restore（只清自己的）
+        // 🔹 reconnect restore
         const oldTimer = pendingReconnect.get(name);
         if (oldTimer) {
             clearTimeout(oldTimer);
@@ -65,14 +65,10 @@ export function chatHandlers(io, socket) {
         }
 
         socket.join(room);
-
         if (!rooms[room]) rooms[room] = [];
 
-        // ⭐ 清 ghost users
-        rooms[room] = rooms[room].filter(u => {
-            if (u.type === "AI") return true;
-            return io.sockets.sockets.has(u.socketId);
-        });
+        // ⭐ 清理已斷線的 ghost users
+        rooms[room] = rooms[room].filter(u => u.type === "AI" || io.sockets.sockets.has(u.socketId));
 
         // 預設資料
         let level = 1, exp = 0, gender = "女", avatar = "/avatars/g01.gif";
@@ -85,20 +81,15 @@ export function chatHandlers(io, socket) {
             return;
         }
 
-        // 🔹 DB
+        // 🔹 從 DB 取得資料
         try {
-            const res = await pool.query(
-                `
-            SELECT u.username, u.gender, u.avatar,
-                   urs.level, urs.exp, urs.gold_apples
+            const res = await pool.query(`
+            SELECT u.username, u.gender, u.avatar, urs.level, urs.exp, urs.gold_apples
             FROM users u
             LEFT JOIN user_room_stats urs
             ON u.id = urs.user_id AND urs.room = $2
             WHERE u.username = $1
-            `,
-                [user.name, room]
-            );
-
+        `, [user.name, room]);
             const dbUser = res.rows[0];
             if (dbUser) {
                 name = dbUser.username;
@@ -115,107 +106,50 @@ export function chatHandlers(io, socket) {
 
         console.log("🟢 join", room, socket.id, name);
 
-        // ⭐ 設定 socket.data（一定要有 token）
-        socket.data = {
-            ...socket.data,
-            room,
-            name,
-            token,
-            level,
-            exp,
-            gold_apples,
-            gender,
-            avatar,
-            type
-        };
+        // ⭐ 設定 socket.data
+        socket.data = { ...socket.data, room, name, token, level, exp, gold_apples, gender, avatar, type };
 
-        // ⭐ 單登入控制（唯一來源，username 判斷）
-        const oldSessions = [...ioTokens.entries()]
-            .filter(([_, data]) => data.username === name);
-
-        for (const [oldToken, oldData] of oldSessions) {
-            if (oldData.socketId === socket.id) continue; // 自己跳過
-
-            const oldSocket = io.sockets.sockets.get(oldData.socketId);
+        // ⭐ 踢掉同名舊 socket
+        const oldUser = rooms[room].find(u => u.name === name && u.socketId !== socket.id);
+        if (oldUser) {
+            const oldSocket = io.sockets.sockets.get(oldUser.socketId);
             if (oldSocket) {
-                console.log("👢 踢舊連線:", name);
-
-                // 標記被踢
                 oldSocket.data = oldSocket.data || {};
                 oldSocket.data.forceLogout = true;
-
-                // 清理 reconnect timer
-                const oldTimer = pendingReconnect.get(name);
-                if (oldTimer) {
-                    clearTimeout(oldTimer);
-                    pendingReconnect.delete(name);
-                }
-
-                // 發送強制登出通知
-                oldSocket.emit("forceLogout", {
-                    reason: "帳號現已在其他地方登入"
-                });
-
-                // 強制斷線
+                oldSocket.emit("forceLogout", { reason: "帳號已在其他地方登入" });
                 oldSocket.disconnect(true);
             }
-
-            // 刪掉舊 token
-            ioTokens.delete(oldToken);
+            rooms[room] = rooms[room].filter(u => u.socketId !== oldUser.socketId);
         }
 
-        // ⭐ 註冊新連線（如果有 token 才存）
-        if (token) {
-            ioTokens.set(token, { username: name, socketId: socket.id, ip, ts: Date.now() });
-        }
+        // ⭐ 註冊新連線 token
+        if (token) ioTokens.set(token, { username: name, socketId: socket.id, ip, ts: Date.now() });
 
-        /* =========================
-           rooms（只負責顯示，不踢人）
-        ========================= */
-        let isDuplicate = false;
-        const exists = rooms[room].find(u => u.name === name);
-        if (!exists) {
-            rooms[room].push({
-                socketId: socket.id,
-                name,
-                type,
-                level,
-                exp,
-                gold_apples,
-                gender,
-                avatar
-            });
+        // ⭐ rooms 更新或新增
+        let existing = rooms[room].find(u => u.name === name);
+        if (!existing) {
+            rooms[room].push({ socketId: socket.id, name, type, level, exp, gold_apples, gender, avatar });
+            io.to(room).emit("systemMessage", `${name} 進入聊天室`);
         } else {
-            isDuplicate = true;
-            // 嘗試踢掉舊的 socket
-            if (exists.socketId) {
-                const oldSocket = io.sockets.sockets.get(exists.socketId);
-                if (oldSocket) {
-                    console.log(`👢 ${name} 重複登入，踢掉舊連線`);
-                    oldSocket.data = oldSocket.data || {};
-                    oldSocket.data.forceLogout = true;
-                    oldSocket.emit("forceLogout", { reason: "帳號已在其他地方登入" });
-                    oldSocket.disconnect(true);
-                }
-            }
-            exists.socketId = socket.id;
-            exists.level = level;
-            exists.exp = exp;
-            exists.gold_apples = gold_apples;
-            exists.gender = gender;
-            exists.avatar = avatar;
-            exists.type = type;
+            existing.socketId = socket.id;
+            existing.level = level;
+            existing.exp = exp;
+            existing.gold_apples = gold_apples;
+            existing.gender = gender;
+            existing.avatar = avatar;
+            existing.type = type;
         }
+
+        // ⭐ 更新 onlineUsers / IP
         onlineUsers.set(name, Date.now());
         addUserIP(ip, name);
-        // 初始化
+
+        // ⭐ 初始化房間狀態
         if (!roomContext[room]) roomContext[room] = [];
         if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
         if (!songState[room]) getRoomState(room);
-        // 廣播
-        if (!isDuplicate && !oldTimer) {
-            io.to(room).emit("systemMessage", `${name} 進入聊天室`);
-        }
+
+        // ⭐ 廣播
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
