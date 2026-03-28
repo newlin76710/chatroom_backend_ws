@@ -55,7 +55,7 @@ export function chatHandlers(io, socket) {
         const token = user.token || "";
         let name = user.name || "訪客" + Math.floor(Math.random() * 9999);
         const ip = getClientIP(socket);
-
+        console.log("token, name:", token, name);
         // 🔹 reconnect restore
         const oldTimer = pendingReconnect.get(name);
         if (oldTimer) {
