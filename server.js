@@ -141,13 +141,13 @@ io.on("connection", socket => {
   chatHandlers(io, socket);
   // 唱歌
   songSocket(io, socket);
-  // 啟動自動加 EXP
-  startExpAutoTimer(io);
   socket.on("disconnect", reason => {
     console.log(`🔴 socket disconnected: ${socket.id}`, reason);
   });
 });
 
+// 啟動自動加 EXP
+startExpAutoTimer(io);
 //////////////////////////////////////////////////////
 // ⭐⭐⭐⭐⭐ 防 Render 睡死（只保護 container）
 //////////////////////////////////////////////////////
