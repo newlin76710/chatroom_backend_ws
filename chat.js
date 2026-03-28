@@ -187,7 +187,17 @@ export function chatHandlers(io, socket) {
             });
         } else {
             isDuplicate = true;
-            // ⭐ 不踢，只覆蓋
+            // 嘗試踢掉舊的 socket
+            if (exists.socketId) {
+                const oldSocket = io.sockets.sockets.get(exists.socketId);
+                if (oldSocket) {
+                    console.log(`👢 ${name} 重複登入，踢掉舊連線`);
+                    oldSocket.data = oldSocket.data || {};
+                    oldSocket.data.forceLogout = true;
+                    oldSocket.emit("forceLogout", { reason: "帳號已在其他地方登入" });
+                    oldSocket.disconnect(true);
+                }
+            }
             exists.socketId = socket.id;
             exists.level = level;
             exists.exp = exp;
@@ -195,7 +205,6 @@ export function chatHandlers(io, socket) {
             exists.gender = gender;
             exists.avatar = avatar;
             exists.type = type;
-            console.log("覆蓋舊 socket:", name);
         }
         onlineUsers.set(name, Date.now());
         addUserIP(ip, name);
