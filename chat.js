@@ -132,33 +132,31 @@ export function chatHandlers(io, socket) {
         /* =========================
            ⭐ 單登入控制（唯一來源）
         ========================= */
-        const oldSessions = [...ioTokens.entries()]
-            .filter(([t, data]) => data.username === name);
-
-        for (const [oldToken, oldData] of oldSessions) {
-            if (oldData.socketId === socket.id) continue;
-
-            const oldSocket = io.sockets.sockets.get(oldData.socketId);
-
-            if (oldSocket) {
-                console.log("👢 踢舊連線:", name);
-
-                oldSocket.data.forceLogout = true;
-
-                const timer = pendingReconnect.get(name);
-                if (timer) {
-                    clearTimeout(timer);
-                    pendingReconnect.delete(name);
+        for (const [key, data] of ioTokens.entries()) {
+            // 找到相同 username 的舊連線，但不是自己
+            if (data.username === name && data.socketId !== socket.id) {
+                const oldSocket = io.sockets.sockets.get(data.socketId);
+                if (oldSocket) {
+                    console.log("👢 踢舊連線:", name);
+                    // ⭐ 標記舊 socket 被踢
+                    oldSocket.data.forceLogout = true;
+                    // ⭐ 清理舊 socket 的 reconnect timer
+                    const oldTimer = pendingReconnect.get(name);
+                    if (oldTimer) {
+                        clearTimeout(oldTimer);
+                        pendingReconnect.delete(name);
+                    }
+                    // ⭐ 通知前端被踢
+                    oldSocket.emit("forceLogout", {
+                        reason: "帳號現已在其他地方登入"
+                    });
+                    // ⭐ 強制斷線
+                    oldSocket.disconnect(true);
                 }
-
-                oldSocket.emit("forceLogout", {
-                    reason: "帳號現已在其他地方登入"
-                });
-
-                oldSocket.disconnect(true);
+                // ⭐ 刪掉舊 token
+                ioTokens.delete(key);
             }
         }
-
         // ⭐ 註冊 / 覆蓋 token
         if (token) {
             ioTokens.set(token, {
@@ -172,11 +170,8 @@ export function chatHandlers(io, socket) {
         /* =========================
            rooms（只負責顯示，不踢人）
         ========================= */
-
         let isDuplicate = false;
-
         const exists = rooms[room].find(u => u.name === name);
-
         if (!exists) {
             rooms[room].push({
                 socketId: socket.id,
@@ -190,7 +185,6 @@ export function chatHandlers(io, socket) {
             });
         } else {
             isDuplicate = true;
-
             // ⭐ 不踢，只覆蓋
             exists.socketId = socket.id;
             exists.level = level;
@@ -199,23 +193,18 @@ export function chatHandlers(io, socket) {
             exists.gender = gender;
             exists.avatar = avatar;
             exists.type = type;
-
             console.log("覆蓋舊 socket:", name);
         }
-
         onlineUsers.set(name, Date.now());
         addUserIP(ip, name);
-
         // 初始化
         if (!roomContext[room]) roomContext[room] = [];
         if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
         if (!songState[room]) getRoomState(room);
-
         // 廣播
         if (!isDuplicate && !oldTimer) {
             io.to(room).emit("systemMessage", `${name} 進入聊天室`);
         }
-
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
