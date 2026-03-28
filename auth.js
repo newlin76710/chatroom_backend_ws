@@ -475,22 +475,6 @@ authRouter.post("/login", async (req, res) => {
     const now = new Date();
     const token = crypto.randomUUID();
 
-    // 🔹 記憶體判斷是否已在線
-    if (onlineUsers.has(username)) {
-      const oldEntry = [...ioTokens.entries()].find(([t, data]) => data.username === username);
-      if (oldEntry) {
-        const [oldToken, { socketId }] = oldEntry;
-        const socket = req.app.get("io").sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit("forceLogout", { reason: "你的帳號在其他地方登入" });
-          socket.disconnect(true);
-          console.log("帳號在其他地方登入", username);
-        }
-        ioTokens.delete(oldToken);
-      }
-      onlineUsers.delete(username);
-    }
-
     if (!addUserIP(ip, username)) {
       return res.status(400).json({
         error: "同一 IP 最多只能登入 5 個帳號"
