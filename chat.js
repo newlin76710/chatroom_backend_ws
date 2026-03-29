@@ -37,30 +37,25 @@ function getClientIP(socket) {
         : socket?.handshake?.address;
 }
 
-function startOnlineReward(io, room) {
+export function startOnlineReward(io, room) {
     if (onlineRewardTimers[room]) return;
+
+    // 每 1 分鐘檢查一次在線使用者
     onlineRewardTimers[room] = setInterval(async () => {
         const now = Date.now();
         const users = rooms[room] || [];
-        // ================= 清理 userSpamCache =================
-        for (const [username, record] of userSpamCache.entries()) {
-            if (now - record.lastTime > 10 * 1000) { // 超過 10 秒沒發言
-                userSpamCache.delete(username);
-            }
-        }
-        // ================= 清理 muteMap =================
-        for (const [username, muteUntil] of muteMap.entries()) {
-            if (muteUntil < now) {
-                muteMap.delete(username);
-            }
-        }
-        // ================= 在線獎勵 =================
+
         for (const u of users) {
             if (u.type !== "account") continue;
+
             const lastSeen = onlineUsers.get(u.name);
-            if (!lastSeen || now - lastSeen > 5 * 60 * 1000) continue;
+            if (!lastSeen || now - lastSeen > 5 * 60 * 1000) continue; // 超過5分鐘沒活動就跳過
+
             const lastReward = onlineRewardTracker.get(u.name) || 0;
-            if (now - lastReward < 30 * 60 * 1000) continue; // 每人30分鐘一次
+
+            // ⭐ 超過30分鐘才給獎勵
+            if (now - lastReward < 30 * 60 * 1000) continue;
+
             try {
                 const res = await pool.query(`
                     SELECT u.id, urs.level, urs.exp
@@ -69,37 +64,51 @@ function startOnlineReward(io, room) {
                     ON u.id = urs.user_id
                     WHERE u.username = $1 AND urs.room = $2
                 `, [u.name, room]);
+
                 const dbUser = res.rows[0];
                 if (!dbUser) continue;
+
                 let { level, exp } = dbUser;
                 if (level >= ANL - 1) continue;
+
                 exp += 10;
                 while (level < ANL - 1 && exp >= expForNextLevel(level)) {
                     exp -= expForNextLevel(level);
                     level++;
                 }
+
+                // 更新 DB
                 await pool.query(`
                     UPDATE user_room_stats
                     SET level=$1, exp=$2
                     WHERE user_id=$3 AND room=$4
                 `, [level, exp, dbUser.id, room]);
+
+                // ⭐ 更新領獎時間
                 onlineRewardTracker.set(u.name, now);
+
+                // 同步記憶體
                 const roomUser = rooms[room].find(x => x.name === u.name);
                 if (roomUser) {
                     roomUser.level = level;
                     roomUser.exp = exp;
                 }
+
+                // 發訊息給使用者
                 const socket = Array.from(io.sockets.sockets.values())
                     .find(s => s.data?.name === u.name);
                 if (socket) {
                     socket.emit("systemMessage", `${u.name} 在線獎勵🎁 +10 積分`);
                 }
+
             } catch (err) {
                 console.error("在線獎勵錯誤:", err);
             }
         }
+
+        // 廣播更新
         io.to(room).emit("updateUsers", rooms[room]);
-    }, 60 * 1000); // 每分鐘跑一次
+    }, 60 * 1000); // 每1分鐘檢查一次
 }
 
 async function logMessage({ room, username, role, message, mode = "public", target = '', message_type = "text", socket }) {
