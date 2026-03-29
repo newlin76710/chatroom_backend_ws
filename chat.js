@@ -16,6 +16,7 @@ export const videoState = {};
 export const displayQueue = {};
 export const onlineUsers = new Map();
 export const pendingReconnect = new Map();
+export const onlineRewardTimers = {};
 // ================= 防洗版 =================
 const userSpamCache = new Map();
 // key: username
@@ -33,6 +34,75 @@ function getClientIP(socket) {
         || socket.handshake.headers["cf-connecting-ip"]
         || socket.handshake.address
         : socket?.handshake?.address;
+}
+
+function startOnlineReward(io, room) {
+    if (onlineRewardTimers[room]) return;
+
+    onlineRewardTimers[room] = setInterval(async () => {
+        const now = Date.now();
+        const users = rooms[room] || [];
+
+        for (const u of users) {
+            // 只給會員
+            if (u.type !== "account") continue;
+
+            const lastSeen = onlineUsers.get(u.name);
+
+            // ⭐ 必須 5 分鐘內有 heartbeat 才算活人
+            if (!lastSeen || now - lastSeen > 5 * 60 * 1000) continue;
+
+            try {
+                const res = await pool.query(`
+                    SELECT u.id, urs.level, urs.exp
+                    FROM users u
+                    JOIN user_room_stats urs
+                    ON u.id = urs.user_id
+                    WHERE u.username = $1 AND urs.room = $2
+                `, [u.name, room]);
+
+                const dbUser = res.rows[0];
+                if (!dbUser) continue;
+
+                let { level, exp } = dbUser;
+                if (level >= ANL - 1) continue;
+                // ⭐ 給 10 分
+                exp += 10;
+
+                while (level < ANL - 1 && exp >= expForNextLevel(level)) {
+                    exp -= expForNextLevel(level);
+                    level++;
+                }
+
+                await pool.query(`
+                    UPDATE user_room_stats
+                    SET level=$1, exp=$2
+                    WHERE user_id=$3 AND room=$4
+                `, [level, exp, dbUser.id, room]);
+
+                // 同步記憶體
+                const roomUser = rooms[room].find(x => x.name === u.name);
+                if (roomUser) {
+                    roomUser.level = level;
+                    roomUser.exp = exp;
+                }
+
+                // 可選：通知本人
+                const socket = Array.from(io.sockets.sockets.values())
+                    .find(s => s.data?.name === u.name);
+
+                if (socket) {
+                    socket.emit("systemMessage", `${u.name} 在線獎勵🎁 +10 積分`);
+                }
+
+            } catch (err) {
+                console.error("在線獎勵錯誤:", err);
+            }
+        }
+
+        io.to(room).emit("updateUsers", rooms[room]);
+
+    }, 30 * 60 * 1000);
 }
 
 async function logMessage({ room, username, role, message, mode = "public", target = '', message_type = "text", socket }) {
@@ -154,6 +224,7 @@ export function chatHandlers(io, socket) {
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
         if (OPENAI) startAIAutoTalk(io, room);
+        startOnlineReward(io, room);
     });
 
     // --- 聊天訊息 ---
@@ -400,6 +471,10 @@ export function chatHandlers(io, socket) {
 
     // ================== 離開房間 ==================
     const removeUser = () => {
+        if (rooms[room]?.length === 0) {
+            clearInterval(onlineRewardTimers[room]);
+            delete onlineRewardTimers[room];
+        }
         if (socket.data.hasLeft) return;
         socket.data.hasLeft = true;
 
