@@ -42,13 +42,25 @@ function startOnlineReward(io, room) {
     onlineRewardTimers[room] = setInterval(async () => {
         const now = Date.now();
         const users = rooms[room] || [];
+        // ================= 清理 userSpamCache =================
+        for (const [username, record] of userSpamCache.entries()) {
+            if (now - record.lastTime > 10 * 1000) { // 超過 10 秒沒發言
+                userSpamCache.delete(username);
+            }
+        }
+        // ================= 清理 muteMap =================
+        for (const [username, muteUntil] of muteMap.entries()) {
+            if (muteUntil < now) {
+                muteMap.delete(username);
+            }
+        }
+        // ================= 在線獎勵 =================
         for (const u of users) {
             if (u.type !== "account") continue;
             const lastSeen = onlineUsers.get(u.name);
             if (!lastSeen || now - lastSeen > 5 * 60 * 1000) continue;
             const lastReward = onlineRewardTracker.get(u.name) || 0;
-            // ⭐ 核心：每個人自己的30分鐘
-            if (now - lastReward < 30 * 60 * 1000) continue;
+            if (now - lastReward < 30 * 60 * 1000) continue; // 每人30分鐘一次
             try {
                 const res = await pool.query(`
                     SELECT u.id, urs.level, urs.exp
@@ -71,10 +83,7 @@ function startOnlineReward(io, room) {
                     SET level=$1, exp=$2
                     WHERE user_id=$3 AND room=$4
                 `, [level, exp, dbUser.id, room]);
-
-                // ⭐ 更新領獎時間（超重要）
                 onlineRewardTracker.set(u.name, now);
-                // 同步記憶體
                 const roomUser = rooms[room].find(x => x.name === u.name);
                 if (roomUser) {
                     roomUser.level = level;
@@ -90,7 +99,7 @@ function startOnlineReward(io, room) {
             }
         }
         io.to(room).emit("updateUsers", rooms[room]);
-    }, 60 * 1000); // ⭐ 改成每1分鐘檢查（不是30分鐘！）
+    }, 60 * 1000); // 每分鐘跑一次
 }
 
 async function logMessage({ room, username, role, message, mode = "public", target = '', message_type = "text", socket }) {
@@ -464,15 +473,14 @@ export function chatHandlers(io, socket) {
 
         const { room, name, token } = socket.data || {};
         if (!room || !rooms[room]) return;
-        if (rooms[room]?.length === 0) {
+        const wasInRoom = rooms[room].some(u => u.socketId === socket.id);
+        rooms[room] = rooms[room].filter(u => u.type === "AI" || u.socketId !== socket.id);
+        socket.leave(room);
+        const realUsers = rooms[room].filter(u => u.type !== "AI");
+        if (realUsers.length === 0) {
             clearInterval(onlineRewardTimers[room]);
             delete onlineRewardTimers[room];
         }
-        const wasInRoom = rooms[room].some(u => u.socketId === socket.id);
-
-        rooms[room] = rooms[room].filter(u => u.type === "AI" || u.socketId !== socket.id);
-        socket.leave(room);
-
         if (name && wasInRoom) {
             io.to(room).emit("systemMessage", `${name} 離開聊天室`);
             io.to(room).emit("updateUsers", rooms[room]);
@@ -482,7 +490,7 @@ export function chatHandlers(io, socket) {
         if (name) {
             onlineUsers.delete(name);
             onlineRewardTracker.delete(name);
-        } 
+        }
         removeUserIP(getClientIP(socket), name);
 
         // ⭐ 只刪自己的 token

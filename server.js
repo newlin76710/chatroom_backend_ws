@@ -10,7 +10,7 @@ import { adminRouter } from "./admin.js";
 import { authRouter, ioTokens } from "./auth.js";
 import { aiRouter } from "./ai.js";
 import { songState } from "./socketHandlers.js";
-import { rooms, chatHandlers, onlineUsers } from "./chat.js";
+import { rooms, chatHandlers, onlineUsers, pendingReconnect, onlineRewardTracker } from "./chat.js";
 import { songSocket } from "./socketHandlers.js";
 import { quickPhrasesRouter } from "./quickPhrase.js";
 import { ipRouter } from "./blockIP.js";
@@ -189,15 +189,16 @@ setInterval(() => {
     }
   }
   for (const [name, last] of onlineUsers.entries()) {
-    if (now - last > 5 * 60 * 1000) { // 5分鐘沒 heartbeat
+    if (pendingReconnect.has(name)) continue; // 正在等待重連
+    if (now - last > 5 * 60 * 1000) {
       onlineUsers.delete(name);
+      onlineRewardTracker.delete(name);
       console.log("🧹 假在線移除:", name);
 
-      // 同步移除 token
+      // 移除 token
       for (const [token, data] of ioTokens.entries()) {
         if (data.username === name) {
           ioTokens.delete(token);
-          console.log("🧹 對應 token 移除:", token);
           removeUserIP(data.ip, name);
         }
       }
