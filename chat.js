@@ -471,16 +471,15 @@ export function chatHandlers(io, socket) {
 
     // ================== 離開房間 ==================
     const removeUser = () => {
-        if (rooms[room]?.length === 0) {
-            clearInterval(onlineRewardTimers[room]);
-            delete onlineRewardTimers[room];
-        }
         if (socket.data.hasLeft) return;
         socket.data.hasLeft = true;
 
         const { room, name, token } = socket.data || {};
         if (!room || !rooms[room]) return;
-
+        if (rooms[room]?.length === 0) {
+            clearInterval(onlineRewardTimers[room]);
+            delete onlineRewardTimers[room];
+        }
         const wasInRoom = rooms[room].some(u => u.socketId === socket.id);
 
         rooms[room] = rooms[room].filter(u => u.type === "AI" || u.socketId !== socket.id);
