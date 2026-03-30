@@ -10,7 +10,7 @@ import { adminRouter } from "./admin.js";
 import { authRouter, ioTokens } from "./auth.js";
 import { aiRouter } from "./ai.js";
 import { songState } from "./socketHandlers.js";
-import { rooms, chatHandlers, onlineUsers, pendingReconnect, onlineRewardTracker } from "./chat.js";
+import { rooms, chatHandlers, onlineUsers, pendingReconnect } from "./chat.js";
 import { songSocket } from "./socketHandlers.js";
 import { quickPhrasesRouter } from "./quickPhrase.js";
 import { ipRouter } from "./blockIP.js";
@@ -178,7 +178,6 @@ setInterval(() => {
         if (pendingReconnect.has(name)) continue;
         if (now - last > 5 * 60 * 1000) {
           onlineUsers.delete(name);
-          onlineRewardTracker.delete(name);
           console.log("🧹 假在線移除:", name);
 
           for (const [token, data] of ioTokens.entries()) {

@@ -16,8 +16,7 @@ export const videoState = {};
 export const displayQueue = {};
 export const onlineUsers = new Map();
 export const pendingReconnect = new Map();
-export const onlineRewardTimers = {};
-export const onlineRewardTracker = new Map();
+
 // ================= 防洗版 =================
 const userSpamCache = new Map();
 // key: username
@@ -35,92 +34,6 @@ function getClientIP(socket) {
         || socket.handshake.headers["cf-connecting-ip"]
         || socket.handshake.address
         : socket?.handshake?.address;
-}
-
-export function startOnlineReward(io, room) {
-    if (onlineRewardTimers[room]) return; // 已經在運行就跳過
-
-    // 建立 socket Map 快速查找
-    const getUserSocketMap = () => {
-        const map = new Map();
-        for (const s of io.sockets.sockets.values()) {
-            if (s.data?.name) map.set(s.data.name, s);
-        }
-        return map;
-    };
-
-    onlineRewardTimers[room] = setInterval(async () => {
-        try {
-            const now = Date.now();
-            const users = rooms[room] || [];
-            const socketMap = getUserSocketMap();
-
-            for (const u of users) {
-                try {
-                    if (u.type !== "account") continue;
-
-                    const lastSeen = onlineUsers.get(u.name);
-                    if (!lastSeen || now - lastSeen > 5 * 60 * 1000) continue;
-
-                    const lastReward = onlineRewardTracker.get(u.name) || 0;
-                    if (now - lastReward < 30 * 60 * 1000) continue;
-
-                    // 查 DB
-                    const res = await pool.query(`
-                        SELECT u.id, urs.level, urs.exp
-                        FROM users u
-                        JOIN user_room_stats urs
-                        ON u.id = urs.user_id
-                        WHERE u.username = $1 AND urs.room = $2
-                    `, [u.name, room]);
-
-                    const dbUser = res.rows[0];
-                    if (!dbUser) continue;
-
-                    let { level, exp } = dbUser;
-                    if (level >= ANL - 1) continue;
-
-                    exp += 10;
-                    while (level < ANL - 1 && exp >= expForNextLevel(level)) {
-                        exp -= expForNextLevel(level);
-                        level++;
-                    }
-
-                    // 更新 DB
-                    await pool.query(`
-                        UPDATE user_room_stats
-                        SET level=$1, exp=$2
-                        WHERE user_id=$3 AND room=$4
-                    `, [level, exp, dbUser.id, room]);
-
-                    // 更新領獎時間
-                    onlineRewardTracker.set(u.name, now);
-
-                    // 更新 memory
-                    const roomUser = rooms[room].find(x => x.name === u.name);
-                    if (roomUser) {
-                        roomUser.level = level;
-                        roomUser.exp = exp;
-                    }
-
-                    // 發訊息給使用者
-                    const socket = socketMap.get(u.name);
-                    if (socket) {
-                        socket.emit("systemMessage", `${u.name} 在線獎勵🎁 +10 積分`);
-                    }
-
-                } catch (err) {
-                    console.error("⚠️ 單個使用者獎勵錯誤:", u.name, err.message);
-                }
-            }
-
-            // 廣播更新
-            io.to(room).emit("updateUsers", rooms[room]);
-
-        } catch (err) {
-            console.error("⚠️ setInterval 整體錯誤:", err.message);
-        }
-    }, 60 * 1000); // 每1分鐘檢查一次
 }
 
 async function logMessage({ room, username, role, message, mode = "public", target = '', message_type = "text", socket }) {
@@ -230,7 +143,7 @@ export function chatHandlers(io, socket) {
         // onlineUsers / IP
         onlineUsers.set(name, Date.now());
         addUserIP(ip, name);
-        onlineRewardTracker.set(name, Date.now());
+
         // 初始化房間狀態
         if (!roomContext[room]) roomContext[room] = [];
         if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
@@ -243,7 +156,7 @@ export function chatHandlers(io, socket) {
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
         io.to(room).emit("videoQueueUpdate", videoState[room].queue);
         if (OPENAI) startAIAutoTalk(io, room);
-        startOnlineReward(io, room);
+
     });
 
     // --- 聊天訊息 ---
@@ -499,10 +412,7 @@ export function chatHandlers(io, socket) {
         rooms[room] = rooms[room].filter(u => u.type === "AI" || u.socketId !== socket.id);
         socket.leave(room);
         const realUsers = rooms[room].filter(u => u.type !== "AI");
-        if (realUsers.length === 0) {
-            clearInterval(onlineRewardTimers[room]);
-            delete onlineRewardTimers[room];
-        }
+
         if (name && wasInRoom) {
             io.to(room).emit("systemMessage", `${name} 離開聊天室`);
             io.to(room).emit("updateUsers", rooms[room]);
@@ -511,7 +421,6 @@ export function chatHandlers(io, socket) {
 
         if (name) {
             onlineUsers.delete(name);
-            onlineRewardTracker.delete(name);
         }
         removeUserIP(getClientIP(socket), name);
 
