@@ -205,7 +205,6 @@ export function chatHandlers(io, socket) {
         let existing = rooms[room].find(u => u.name === name);
         if (!existing) {
             rooms[room].push({ socketId: socket.id, name, type, level, exp, gold_apples, gender, avatar });
-            io.to(room).emit("systemMessage", `${name} 進入聊天室`);
         } else {
             existing.socketId = socket.id;
             existing.level = level;
@@ -224,7 +223,9 @@ export function chatHandlers(io, socket) {
         if (!roomContext[room]) roomContext[room] = [];
         if (!videoState[room]) videoState[room] = { currentVideo: null, queue: [] };
         if (!songState[room]) getRoomState(room);
-
+        if (!existing && !oldTimer) {
+            io.to(room).emit("systemMessage", `${name} 進入聊天室`);
+        }
         // 廣播更新
         io.to(room).emit("updateUsers", rooms[room]);
         io.to(room).emit("videoUpdate", videoState[room].currentVideo);
