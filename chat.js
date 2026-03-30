@@ -37,77 +37,92 @@ function getClientIP(socket) {
         : socket?.handshake?.address;
 }
 
+// 儲存每個房間的定時器
+const onlineRewardTimers = {};
+
 export function startOnlineReward(io, room) {
-    if (onlineRewardTimers[room]) return;
+    if (onlineRewardTimers[room]) return; // 已經在運行就跳過
 
-    // 每 1 分鐘檢查一次在線使用者
-    onlineRewardTimers[room] = setInterval(async () => {
-        const now = Date.now();
-        const users = rooms[room] || [];
-
-        for (const u of users) {
-            if (u.type !== "account") continue;
-
-            const lastSeen = onlineUsers.get(u.name);
-            if (!lastSeen || now - lastSeen > 5 * 60 * 1000) continue; // 超過5分鐘沒活動就跳過
-
-            const lastReward = onlineRewardTracker.get(u.name) || 0;
-
-            // ⭐ 超過30分鐘才給獎勵
-            if (now - lastReward < 30 * 60 * 1000) continue;
-
-            try {
-                const res = await pool.query(`
-                    SELECT u.id, urs.level, urs.exp
-                    FROM users u
-                    JOIN user_room_stats urs
-                    ON u.id = urs.user_id
-                    WHERE u.username = $1 AND urs.room = $2
-                `, [u.name, room]);
-
-                const dbUser = res.rows[0];
-                if (!dbUser) continue;
-
-                let { level, exp } = dbUser;
-                if (level >= ANL - 1) continue;
-
-                exp += 10;
-                while (level < ANL - 1 && exp >= expForNextLevel(level)) {
-                    exp -= expForNextLevel(level);
-                    level++;
-                }
-
-                // 更新 DB
-                await pool.query(`
-                    UPDATE user_room_stats
-                    SET level=$1, exp=$2
-                    WHERE user_id=$3 AND room=$4
-                `, [level, exp, dbUser.id, room]);
-
-                // ⭐ 更新領獎時間
-                onlineRewardTracker.set(u.name, now);
-
-                // 同步記憶體
-                const roomUser = rooms[room].find(x => x.name === u.name);
-                if (roomUser) {
-                    roomUser.level = level;
-                    roomUser.exp = exp;
-                }
-
-                // 發訊息給使用者
-                const socket = Array.from(io.sockets.sockets.values())
-                    .find(s => s.data?.name === u.name);
-                if (socket) {
-                    socket.emit("systemMessage", `${u.name} 在線獎勵🎁 +10 積分`);
-                }
-
-            } catch (err) {
-                console.error("在線獎勵錯誤:", err);
-            }
+    // 建立 socket Map 快速查找
+    const getUserSocketMap = () => {
+        const map = new Map();
+        for (const s of io.sockets.sockets.values()) {
+            if (s.data?.name) map.set(s.data.name, s);
         }
+        return map;
+    };
 
-        // 廣播更新
-        io.to(room).emit("updateUsers", rooms[room]);
+    onlineRewardTimers[room] = setInterval(async () => {
+        try {
+            const now = Date.now();
+            const users = rooms[room] || [];
+            const socketMap = getUserSocketMap();
+
+            for (const u of users) {
+                try {
+                    if (u.type !== "account") continue;
+
+                    const lastSeen = onlineUsers.get(u.name);
+                    if (!lastSeen || now - lastSeen > 5 * 60 * 1000) continue;
+
+                    const lastReward = onlineRewardTracker.get(u.name) || 0;
+                    if (now - lastReward < 30 * 60 * 1000) continue;
+
+                    // 查 DB
+                    const res = await pool.query(`
+                        SELECT u.id, urs.level, urs.exp
+                        FROM users u
+                        JOIN user_room_stats urs
+                        ON u.id = urs.user_id
+                        WHERE u.username = $1 AND urs.room = $2
+                    `, [u.name, room]);
+
+                    const dbUser = res.rows[0];
+                    if (!dbUser) continue;
+
+                    let { level, exp } = dbUser;
+                    if (level >= ANL - 1) continue;
+
+                    exp += 10;
+                    while (level < ANL - 1 && exp >= expForNextLevel(level)) {
+                        exp -= expForNextLevel(level);
+                        level++;
+                    }
+
+                    // 更新 DB
+                    await pool.query(`
+                        UPDATE user_room_stats
+                        SET level=$1, exp=$2
+                        WHERE user_id=$3 AND room=$4
+                    `, [level, exp, dbUser.id, room]);
+
+                    // 更新領獎時間
+                    onlineRewardTracker.set(u.name, now);
+
+                    // 更新 memory
+                    const roomUser = rooms[room].find(x => x.name === u.name);
+                    if (roomUser) {
+                        roomUser.level = level;
+                        roomUser.exp = exp;
+                    }
+
+                    // 發訊息給使用者
+                    const socket = socketMap.get(u.name);
+                    if (socket) {
+                        socket.emit("systemMessage", `${u.name} 在線獎勵🎁 +10 積分`);
+                    }
+
+                } catch (err) {
+                    console.error("⚠️ 單個使用者獎勵錯誤:", u.name, err.message);
+                }
+            }
+
+            // 廣播更新
+            io.to(room).emit("updateUsers", rooms[room]);
+
+        } catch (err) {
+            console.error("⚠️ setInterval 整體錯誤:", err.message);
+        }
     }, 60 * 1000); // 每1分鐘檢查一次
 }
 

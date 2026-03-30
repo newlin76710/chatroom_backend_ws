@@ -18,14 +18,15 @@ import { nicknameRouter } from "./blockNickname.js";
 import { announcementRouter } from "./announcementRouter.js";
 import { messageBoardRouter } from "./messageBoardRouter.js";
 import { createTransferRouter } from "./transferGold.js";
-
+process.on("uncaughtException", (err) => console.error("💥 uncaughtException:", err));
+process.on("unhandledRejection", (err) => console.error("💥 unhandledRejection:", err));
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 
 //////////////////////////////////////////////////////
-// ⭐⭐⭐⭐⭐ 這裡是關鍵 Socket 設定
+// Socket.IO 設定
 //////////////////////////////////////////////////////
 
 const io = new Server(server, {
@@ -33,16 +34,11 @@ const io = new Server(server, {
     origin: (origin, callback) => callback(null, true),
     credentials: true
   },
-
-  // ❗不要限制 transports
-  // 讓 polling 可 fallback 救 websocket
   allowUpgrades: true,
-
   pingInterval: 25000,   // 每25秒確認一次
-  pingTimeout: 120000,  // ⭐⭐⭐⭐ 強烈建議 ≥ 60秒
+  pingTimeout: 120000,   // 強烈建議 ≥ 60秒
   upgradeTimeout: 30000,
-
-  maxHttpBufferSize: 1e7 // 防止大訊息炸掉
+  maxHttpBufferSize: 1e7
 });
 app.set("io", io);
 
@@ -54,7 +50,6 @@ app.use(cors({
   origin: (origin, callback) => callback(null, true),
   credentials: true
 }));
-
 app.use(express.json());
 
 //////////////////////////////////////////////////////
@@ -70,43 +65,31 @@ app.use("/api/blocked-ips", ipRouter);
 app.use("/api/blocked-nicknames", nicknameRouter);
 app.use("/api/message-board", messageBoardRouter);
 app.use("/api", createTransferRouter(io));
-//////////////////////////////////////////////////////
-// 取得房間使用者
-//////////////////////////////////////////////////////
-
+app.get("/", (req, res) => {
+  res.send("🚀 Server is running");
+});
 app.get("/getRoomUsers", (req, res) => {
   const room = req.query.room;
   if (!room) return res.status(400).json({ error: "缺少 room 參數" });
 
   const users = rooms[room] || [];
   res.json({
-    users: users.map(u => ({
-      name: u.name,
-      type: u.type
-    }))
+    users: users.map(u => ({ name: u.name, type: u.type }))
   });
 });
 
-//////////////////////////////////////////////////////
-// LiveKit Token
-//////////////////////////////////////////////////////
-
 app.get("/livekit-token", async (req, res) => {
   const { room, name } = req.query;
-  if (!room || !name)
-    return res.status(400).json({ error: "missing room or name" });
-
-  const state = songState[room];
-  const isSinger = state?.currentSinger === name;
+  if (!room || !name) return res.status(400).json({ error: "missing room or name" });
 
   try {
+    const state = songState[room];
+    const isSinger = state?.currentSinger === name;
+
     const at = new AccessToken(
       process.env.LIVEKIT_API_KEY,
       process.env.LIVEKIT_API_SECRET,
-      {
-        identity: name,
-        ttl: "10m"
-      }
+      { identity: name, ttl: "10m" }
     );
 
     at.addGrant({
@@ -118,12 +101,7 @@ app.get("/livekit-token", async (req, res) => {
     });
 
     const token = await at.toJwt();
-
-    res.json({
-      token,
-      identity: name,
-      role: isSinger ? "singer" : "listener",
-    });
+    res.json({ token, identity: name, role: isSinger ? "singer" : "listener" });
 
   } catch (err) {
     console.error("[LiveKit Token] Error:", err);
@@ -137,73 +115,87 @@ app.get("/livekit-token", async (req, res) => {
 
 io.on("connection", socket => {
   console.log(`🟢 socket connected: ${socket.id}`);
-  // 聊天
-  chatHandlers(io, socket);
-  // 唱歌
-  songSocket(io, socket);
+
+  try {
+    chatHandlers(io, socket);
+  } catch (err) {
+    console.error("chatHandlers error:", err.message);
+  }
+
+  try {
+    songSocket(io, socket);
+  } catch (err) {
+    console.error("songSocket error:", err.message);
+  }
+
   socket.on("disconnect", reason => {
     console.log(`🔴 socket disconnected: ${socket.id}`, reason);
   });
 });
 
 //////////////////////////////////////////////////////
-// ⭐⭐⭐⭐⭐ 防 Render 睡死（只保護 container）
+// Heartbeat 防 Render 睡死
 //////////////////////////////////////////////////////
 
 const HEARTBEAT_INTERVAL = 60 * 1000;
-
 setInterval(async () => {
   try {
-    const url =
-      process.env.SELF_URL ||
-      `http://localhost:${process.env.PORT || 10000}`;
-
+    const url = process.env.SELF_URL || `http://localhost:${process.env.PORT || 10000}`;
     await fetch(url);
-
   } catch (err) {
     console.error("[Heartbeat] Error:", err.message);
   }
 }, HEARTBEAT_INTERVAL);
 
 //////////////////////////////////////////////////////
-// ⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐
-// 🔥 超推薦：清除假在線使用者
+// 清除假在線使用者（安全版）
 //////////////////////////////////////////////////////
 
 setInterval(() => {
   const now = Date.now();
-  for (const room in rooms) {
-    rooms[room] = rooms[room].filter(u =>
-      u.type === "AI" || io.sockets.sockets.has(u.socketId)
-    );
-  }
-  for (const room in songState) {
-    const state = songState[room];
-    if (!state) continue;
-    state.queue = state.queue.filter(u => io.sockets.sockets.has(u.socketId));
-    // 如果上麥的歌手已經斷線，也清掉
-    if (state.currentSingerSocketId && !io.sockets.sockets.has(state.currentSingerSocketId)) {
-      state.currentSinger = null;
-      state.currentSingerSocketId = null;
-      state.currentScore = null;
-    }
-  }
-  for (const [name, last] of onlineUsers.entries()) {
-    if (pendingReconnect.has(name)) continue; // 正在等待重連
-    if (now - last > 5 * 60 * 1000) {
-      onlineUsers.delete(name);
-      onlineRewardTracker.delete(name);
-      console.log("🧹 假在線移除:", name);
 
-      // 移除 token
-      for (const [token, data] of ioTokens.entries()) {
-        if (data.username === name) {
-          ioTokens.delete(token);
-          removeUserIP(data.ip, name);
-        }
+  try {
+    // 清理房間使用者
+    for (const room in rooms) {
+      rooms[room] = rooms[room].filter(u => u.type === "AI" || io.sockets.sockets.has(u.socketId));
+    }
+
+    // 清理唱歌房狀態
+    for (const room in songState) {
+      const state = songState[room];
+      if (!state) continue;
+      state.queue = state.queue.filter(u => io.sockets.sockets.has(u.socketId));
+      if (state.currentSingerSocketId && !io.sockets.sockets.has(state.currentSingerSocketId)) {
+        state.currentSinger = null;
+        state.currentSingerSocketId = null;
+        state.currentScore = null;
       }
     }
+
+    // 清理 onlineUsers / onlineReward / token
+    for (const [name, last] of onlineUsers.entries()) {
+      try {
+        if (pendingReconnect.has(name)) continue;
+        if (now - last > 5 * 60 * 1000) {
+          onlineUsers.delete(name);
+          onlineRewardTracker.delete(name);
+          console.log("🧹 假在線移除:", name);
+
+          for (const [token, data] of ioTokens.entries()) {
+            if (data.username === name) {
+              ioTokens.delete(token);
+              try { removeUserIP(data.ip, name); } catch (err) { console.error("removeUserIP error", err.message); }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("單個假在線錯誤", name, err.message);
+      }
+    }
+  } catch (err) {
+    console.error("假在線 interval 錯誤", err.message);
   }
+
 }, 60000);
 
 //////////////////////////////////////////////////////
@@ -211,7 +203,6 @@ setInterval(() => {
 //////////////////////////////////////////////////////
 
 const port = process.env.PORT || 10000;
-
 server.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log("Server started at:", new Date());
