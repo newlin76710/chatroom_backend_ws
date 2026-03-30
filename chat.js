@@ -482,7 +482,7 @@ export function chatHandlers(io, socket) {
 
         const { room, name, token } = socket.data || {};
         if (!room || !rooms[room]) return;
-        const wasInRoom = rooms[room].some(u => u.socketId === socket.id);
+        const wasInRoom = rooms[room].some(u => u.name === name);
         rooms[room] = rooms[room].filter(u => u.type === "AI" || u.socketId !== socket.id);
         socket.leave(room);
         const realUsers = rooms[room].filter(u => u.type !== "AI");
