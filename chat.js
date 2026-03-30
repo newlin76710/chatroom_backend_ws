@@ -37,9 +37,6 @@ function getClientIP(socket) {
         : socket?.handshake?.address;
 }
 
-// 儲存每個房間的定時器
-const onlineRewardTimers = {};
-
 export function startOnlineReward(io, room) {
     if (onlineRewardTimers[room]) return; // 已經在運行就跳過
 
