@@ -294,74 +294,112 @@ export const createTransferRouter = (io) => {
             client.release();
         }
     });
-
     router.get("/gold-apple-leaderboard", authMiddleware, async (req, res) => {
         const client = await pool.connect();
+
         try {
             const { type = "gold_apples", range = "monthly" } = req.query;
-            const TOP_N = parseInt(req.query.top || "10", 10);
+            const TOP_N = Math.min(parseInt(req.query.top || "10", 10), 100);
 
             if (!["gold_apples", "rose", "firework"].includes(type)) {
                 return res.status(400).json({ success: false, error: "type 參數錯誤" });
             }
 
+            // =============================
+            // 🕒 台灣時間 → 轉 UTC 區間
+            // =============================
+            const OFFSET = 8 * 60 * 60 * 1000;
             const now = new Date();
+            const twNow = new Date(now.getTime() + OFFSET);
+
             let startDate = null;
             let endDate = null;
 
+            function getTWMonthUTC(year, month) {
+                const start = new Date(Date.UTC(year, month, 1));
+                const end = new Date(Date.UTC(year, month + 1, 1));
+
+                return {
+                    start: new Date(start.getTime() - OFFSET),
+                    end: new Date(end.getTime() - OFFSET),
+                };
+            }
+
             if (range === "monthly") {
-                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1); // ✅ 下個月1號
+                const { start, end } = getTWMonthUTC(
+                    twNow.getUTCFullYear(),
+                    twNow.getUTCMonth()
+                );
+                startDate = start;
+                endDate = end;
             }
 
             if (range === "lastMonth") {
-                startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                endDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                const { start, end } = getTWMonthUTC(
+                    twNow.getUTCFullYear(),
+                    twNow.getUTCMonth() - 1
+                );
+                startDate = start;
+                endDate = end;
             }
 
             let result;
 
+            // =============================
+            // 🏆 總排行榜（直接統計表）
+            // =============================
             if (range === "total") {
-                // 總量直接從 user_room_stats 拿值，排除 ANL 以上
                 const columnMap = {
                     gold_apples: "gold_apples",
                     rose: "rose",
                     firework: "firework"
                 };
+
                 const col = columnMap[type];
 
                 const totalRes = await client.query(
-                    `SELECT u.username, urs.${col} AS amount
-                 FROM users u
-                 JOIN user_room_stats urs ON u.id = urs.user_id
-                 WHERE urs.room = $1 AND urs.level < $2
-                 ORDER BY urs.${col} DESC
-                 LIMIT $3`,
+                    `
+                SELECT u.username, urs.${col} AS amount
+                FROM users u
+                JOIN user_room_stats urs ON u.id = urs.user_id
+                WHERE urs.room = $1
+                  AND urs.level < $2
+                ORDER BY urs.${col} DESC
+                LIMIT $3
+                `,
                     [ROOM, ANL, TOP_N]
                 );
 
                 result = totalRes.rows;
             } else {
-                // 當月 / 上月 用 gift_logs + 排除 ANL 以上
+                // =============================
+                // 📊 月 / 上月（gift_logs）
+                // =============================
                 let query = `
-                SELECT u.username,
-                       SUM(CASE WHEN gl.item_type=$1 THEN gl.amount ELSE 0 END) AS amount
+                SELECT 
+                    u.username,
+                    COALESCE(SUM(gl.amount), 0) AS amount
                 FROM users u
-                JOIN user_room_stats urs ON u.id = urs.user_id
-                JOIN gift_logs gl ON u.id = gl.receiver_id
-                WHERE gl.room = $2
-                  AND urs.room = $2
-                  AND urs.level < $3
+                JOIN user_room_stats urs 
+                    ON u.id = urs.user_id
+                JOIN gift_logs gl 
+                    ON u.id = gl.receiver_id
+                WHERE gl.room = $1
+                  AND urs.room = $1
+                  AND urs.level < $2
+                  AND gl.item_type = $3
             `;
-                const params = [type, ROOM, ANL];
+
+                const params = [ROOM, ANL, type];
 
                 if (startDate) {
                     params.push(startDate);
                     query += ` AND gl.created_at >= $${params.length}`;
                 }
+
                 if (endDate) {
                     params.push(endDate);
-                    query += ` AND gl.created_at <= $${params.length}`;
+                    query += ` AND gl.created_at < $${params.length}`; // ⚠️ 重點
                 }
 
                 query += `
@@ -369,21 +407,26 @@ export const createTransferRouter = (io) => {
                 ORDER BY amount DESC
                 LIMIT $${params.length + 1}
             `;
+
                 params.push(TOP_N);
 
                 const monthlyRes = await client.query(query, params);
                 result = monthlyRes.rows;
             }
 
-            res.json({
+            return res.json({
                 success: true,
                 type,
                 range,
                 leaderboard: result
             });
+
         } catch (err) {
             console.error("查詢排行榜失敗", err);
-            res.status(500).json({ success: false, error: "查詢失敗" });
+            return res.status(500).json({
+                success: false,
+                error: "查詢失敗"
+            });
         } finally {
             client.release();
         }
