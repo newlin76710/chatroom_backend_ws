@@ -18,6 +18,9 @@ import { nicknameRouter } from "./blockNickname.js";
 import { announcementRouter } from "./announcementRouter.js";
 import { messageBoardRouter } from "./messageBoardRouter.js";
 import { createTransferRouter } from "./transferGold.js";
+process.on('exit', (code) => console.log('Process exit code:', code));
+process.on('SIGTERM', () => console.log('SIGTERM received'));
+process.on('SIGINT', () => console.log('SIGINT received'));
 process.on("uncaughtException", (err) => console.error("💥 uncaughtException:", err));
 process.on("unhandledRejection", (err) => console.error("💥 unhandledRejection:", err));
 dotenv.config();
@@ -153,7 +156,6 @@ setInterval(async () => {
 
 setInterval(() => {
   const now = Date.now();
-
   try {
     // 清理房間使用者
     for (const room in rooms) {
