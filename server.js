@@ -3,7 +3,6 @@ import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
 import dotenv from "dotenv";
-import fetch from "node-fetch";
 import { AccessToken } from "livekit-server-sdk";
 import { removeUserIP } from "./ip.js";
 import { adminRouter } from "./admin.js";
@@ -32,9 +31,20 @@ const server = http.createServer(app);
 // Socket.IO 設定
 //////////////////////////////////////////////////////
 
+// 若設定 ALLOWED_ORIGINS（逗號分隔），則限制指定來源；否則允許所有（維持原行為）
+const _allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : null;
+const _corsOrigin = _allowedOrigins
+  ? (origin, callback) => {
+      if (!origin || _allowedOrigins.includes(origin)) callback(null, true);
+      else callback(new Error('Not allowed by CORS'));
+    }
+  : (origin, callback) => callback(null, true);
+
 const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => callback(null, true),
+    origin: _corsOrigin,
     credentials: true
   },
   allowUpgrades: true,
@@ -50,7 +60,7 @@ app.set("io", io);
 //////////////////////////////////////////////////////
 
 app.use(cors({
-  origin: (origin, callback) => callback(null, true),
+  origin: _corsOrigin,
   credentials: true
 }));
 app.use(express.json());
@@ -70,6 +80,9 @@ app.use("/api/message-board", messageBoardRouter);
 app.use("/api", createTransferRouter(io));
 app.get("/", (req, res) => {
   res.send("🚀 Server is running");
+});
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", uptime: Math.floor(process.uptime()) });
 });
 app.get("/getRoomUsers", (req, res) => {
   const room = req.query.room;
@@ -157,9 +170,13 @@ setInterval(async () => {
 setInterval(() => {
   const now = Date.now();
   try {
-    // 清理房間使用者
+    // 清理房間使用者（保留還在 10 秒重連等待中的使用者，否則 leave 訊息會遺失）
     for (const room in rooms) {
-      rooms[room] = rooms[room].filter(u => u.type === "AI" || io.sockets.sockets.has(u.socketId));
+      rooms[room] = rooms[room].filter(u =>
+        u.type === "AI" ||
+        io.sockets.sockets.has(u.socketId) ||
+        pendingReconnect.has(u.name)
+      );
     }
 
     // 清理唱歌房狀態

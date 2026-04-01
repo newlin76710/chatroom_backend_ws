@@ -1,6 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import { pool } from "./db.js";
 import { logLogin } from "./loginLogger.js";
 import { onlineUsers } from "./chat.js";
@@ -8,6 +9,39 @@ import { addUserIP, removeUserIP } from "./ip.js";
 
 const ROOM = process.env.ROOMNAME || 'windsong';
 const GUEST = process.env.OPENGUEST === "true";
+
+// 取得台灣今天日期 YYYY-MM-DD（模組層級，避免每次 request 重新定義）
+function getTaiwanToday() {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const taiwanTime = new Date(utc + 8 * 3600000);
+  return taiwanTime.toISOString().slice(0, 10);
+}
+
+// 速率限制器（用 CF/Proxy header 取真實 IP，與既有 getClientIP 邏輯一致）
+function _getRealIP(req) {
+  return (
+    req.headers["cf-connecting-ip"] ||
+    req.headers["x-forwarded-for"]?.split(",")[0] ||
+    req.socket.remoteAddress
+  );
+}
+const _loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: _getRealIP,
+  message: { error: "登入嘗試次數過多，請 15 分鐘後再試" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const _registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyGenerator: _getRealIP,
+  message: { error: "註冊次數過多，請稍後再試" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 async function getDailyLoginReward(room) {
   try {
@@ -155,7 +189,7 @@ authRouter.get("/me", authMiddleware, async (req, res) => {
 });
 
 /* ================= 訪客登入 ================= */
-authRouter.post("/guest", async (req, res) => {
+authRouter.post("/guest", _loginLimiter, async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
   const { gender, username } = req.body;
@@ -270,7 +304,7 @@ authRouter.post("/guest", async (req, res) => {
 
 
 // 註冊
-authRouter.post("/register", async (req, res) => {
+authRouter.post("/register", _registerLimiter, async (req, res) => {
   try {
     const ip = getClientIP(req);
     const { username, password, gender, phone, email, avatar } = req.body;
@@ -339,7 +373,7 @@ authRouter.post("/register", async (req, res) => {
 });
 
 /* ================= 正式登入（記憶體版） ================= */
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", _loginLimiter, async (req, res) => {
   const ip = getClientIP(req);
   const userAgent = req.headers["user-agent"];
   const { username, password, allowProfileIncomplete } = req.body;
@@ -416,14 +450,6 @@ authRouter.post("/login", async (req, res) => {
    WHERE user_id=$1 AND room=$2`,
       [user.id, room]
     );
-
-    // 取得台灣今天日期 YYYY-MM-DD
-    function getTaiwanToday() {
-      const now = new Date();
-      const utc = now.getTime() + now.getTimezoneOffset() * 60000; // 轉 UTC
-      const taiwanTime = new Date(utc + 8 * 3600000); // +8 小時
-      return taiwanTime.toISOString().slice(0, 10);
-    }
 
     let level, exp, gold_apples;
     const today = getTaiwanToday();

@@ -25,6 +25,10 @@ export const aiNames = Object.keys(aiProfiles);
 
 export const aiRouter = express.Router();
 
+// 預編譯 regex（模組層級，避免每次 callAI 呼叫重新建立）
+const _selfIntroRE = /我是.+?[，。]/g;
+const _arrivedRE = /.+來了[！!。]*/g;
+
 aiRouter.post("/reply", async (req, res) => {
   const { message, aiName } = req.body;
   if (!message || !aiName) return res.status(400).json({ error: "缺少參數" });
@@ -39,10 +43,14 @@ export async function callAI(userMessage, aiName) {
     level: AML
   };
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
   try {
     const response = await fetch("http://220.135.33.190:11434/v1/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         model: "llama3",
         prompt: `
@@ -76,17 +84,20 @@ ${userMessage}
 
     let text = (data.completion || data.choices?.[0]?.text || "嗯～").trim();
 
-    // ⭐ 防止 AI 自我介紹
-    text = text.replace(/我是.+?[，。]/g, "");
-
-    // ⭐ 防止「XXX來了」
-    text = text.replace(/.+來了[！!。]*/g, "");
+    // ⭐ 防止 AI 自我介紹 / 防止「XXX來了」（使用預編譯 regex）
+    text = text.replace(_selfIntroRE, "").replace(_arrivedRE, "");
 
     return text || "哈哈也是啦";
 
   } catch (e) {
-    console.error("callAI error:", e);
+    if (e.name === "AbortError") {
+      console.error("callAI timeout:", aiName);
+    } else {
+      console.error("callAI error:", e);
+    }
     return "我剛剛又 Lag 了一下哈哈。";
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
