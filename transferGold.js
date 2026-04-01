@@ -97,6 +97,56 @@ export const createTransferRouter = (io) => {
                 return res.json({ success: false, transferred: 0, reason: "目標使用者金蘋果已達上限或你沒有足夠蘋果" });
             }
 
+            // 🔹 贈送上限檢查（每次 + 每日）
+            const settingsRes = await client.query(
+                `SELECT per_transfer_limit, daily_transfer_limit FROM room_settings WHERE room = $1`,
+                [ROOM]
+            );
+            const settings = settingsRes.rows[0] || {};
+            const perTransferLimit = settings.per_transfer_limit || 0;
+            const dailyTransferLimit = settings.daily_transfer_limit || 0;
+
+            // 每次上限
+            if (perTransferLimit > 0 && actualTransfer > perTransferLimit) {
+                await client.query("ROLLBACK");
+                return res.json({ success: false, transferred: 0, reason: `每次最多贈送 ${perTransferLimit} 顆` });
+            }
+
+            // 每日上限
+            if (dailyTransferLimit > 0) {
+                const todayTaiwan = (() => {
+                    const now = new Date();
+                    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+                    const tw = new Date(utc + 8 * 3600000);
+                    return tw.toISOString().slice(0, 10);
+                })();
+
+                const sentTodayRes = await client.query(
+                    `SELECT COALESCE(SUM(amount), 0) AS total_sent
+                     FROM gift_logs
+                     WHERE room = $1
+                       AND sender = $2
+                       AND receiver != $2
+                       AND item_type = 'gold_apples'
+                       AND amount > 0
+                       AND (created_at AT TIME ZONE 'Asia/Taipei')::date = $3::date`,
+                    [ROOM, sender.username, todayTaiwan]
+                );
+
+                const sentToday = parseInt(sentTodayRes.rows[0].total_sent, 10);
+                const remaining = dailyTransferLimit - sentToday;
+
+                if (remaining <= 0) {
+                    await client.query("ROLLBACK");
+                    return res.json({ success: false, transferred: 0, reason: `今日贈送上限 ${dailyTransferLimit} 顆已達到` });
+                }
+
+                if (actualTransfer > remaining) {
+                    await client.query("ROLLBACK");
+                    return res.json({ success: false, transferred: 0, reason: `今日最多還能贈送 ${remaining} 顆`, remaining });
+                }
+            }
+
             // 🔹 更新金蘋果 (用 user_id)
             await client.query(
                 `UPDATE user_room_stats

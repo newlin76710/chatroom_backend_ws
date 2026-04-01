@@ -372,6 +372,89 @@ adminRouter.post("/message-logs", authMiddleware, async (req, res) => {
   }
 });
 
+/* ================= 取得系統設定 ================= */
+adminRouter.get("/settings", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || user.level < AML)
+      return res.status(403).json({ error: "權限不足" });
+
+    await pool.query(`
+      INSERT INTO room_settings (room, daily_login_reward, daily_transfer_limit, singing_reward, per_transfer_limit)
+      VALUES ($1, 1, 0, 2, 0)
+      ON CONFLICT (room) DO NOTHING
+    `, [ROOM]);
+
+    const result = await pool.query(
+      `SELECT daily_login_reward, singing_reward, per_transfer_limit, daily_transfer_limit FROM room_settings WHERE room = $1`,
+      [ROOM]
+    );
+
+    res.json(result.rows[0] || { daily_login_reward: 1, singing_reward: 2, per_transfer_limit: 0, daily_transfer_limit: 0 });
+  } catch (err) {
+    console.error("取得設定失敗", err);
+    res.status(500).json({ error: "查詢失敗" });
+  }
+});
+
+/* ================= 更新系統設定 ================= */
+adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || user.level < AML)
+      return res.status(403).json({ error: "權限不足" });
+
+    const { daily_login_reward, singing_reward, per_transfer_limit, daily_transfer_limit } = req.body;
+
+    const fields = { daily_login_reward, singing_reward, per_transfer_limit, daily_transfer_limit };
+    for (const [key, val] of Object.entries(fields)) {
+      if (val !== undefined && (!Number.isInteger(val) || val < 0))
+        return res.status(400).json({ error: `${key} 必須為非負整數` });
+    }
+
+    if (Object.values(fields).every(v => v === undefined))
+      return res.status(400).json({ error: "沒有要更新的設定" });
+
+    await pool.query(`
+      INSERT INTO room_settings (room, daily_login_reward, daily_transfer_limit, singing_reward, per_transfer_limit)
+      VALUES ($1, 1, 0, 2, 0)
+      ON CONFLICT (room) DO NOTHING
+    `, [ROOM]);
+
+    const updates = [];
+    const values = [];
+    let i = 1;
+
+    if (daily_login_reward !== undefined) {
+      updates.push(`daily_login_reward = $${i++}`);
+      values.push(daily_login_reward);
+    }
+    if (singing_reward !== undefined) {
+      updates.push(`singing_reward = $${i++}`);
+      values.push(singing_reward);
+    }
+    if (per_transfer_limit !== undefined) {
+      updates.push(`per_transfer_limit = $${i++}`);
+      values.push(per_transfer_limit);
+    }
+    if (daily_transfer_limit !== undefined) {
+      updates.push(`daily_transfer_limit = $${i++}`);
+      values.push(daily_transfer_limit);
+    }
+
+    values.push(ROOM);
+    await pool.query(
+      `UPDATE room_settings SET ${updates.join(', ')} WHERE room = $${i}`,
+      values
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("更新設定失敗", err);
+    res.status(500).json({ error: "操作失敗" });
+  }
+});
+
 /* ================= 使用者查自己的發言（可選日期 / 預設最近 2 天） ================= */
 adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
   try {

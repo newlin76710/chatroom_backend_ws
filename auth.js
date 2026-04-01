@@ -8,6 +8,17 @@ import { addUserIP, removeUserIP } from "./ip.js";
 
 const ROOM = process.env.ROOMNAME || 'windsong';
 const GUEST = process.env.OPENGUEST === "true";
+
+async function getDailyLoginReward(room) {
+  try {
+    const result = await pool.query(
+      `SELECT daily_login_reward FROM room_settings WHERE room = $1`,
+      [room]
+    );
+    if (result.rows.length) return result.rows[0].daily_login_reward;
+  } catch (e) {}
+  return 1;
+}
 export const authRouter = express.Router();
 export const ioTokens = new Map();
 const fullWidthRegex = /[^\u0000-\u00ff]/;
@@ -418,27 +429,30 @@ authRouter.post("/login", async (req, res) => {
     const today = getTaiwanToday();
 
     let rewardApple = 0;
+    const dailyReward = await getDailyLoginReward(room);
 
     if (!statsRes.rowCount) {
       // 首次進入房間
       level = 2;
       exp = 0;
-      gold_apples = 1;
-      rewardApple = 1;
+      gold_apples = dailyReward;
+      rewardApple = dailyReward;
 
       await pool.query(
-        `INSERT INTO user_room_stats 
-     (user_id, username, room, level, exp, gold_apples, last_login_reward) 
+        `INSERT INTO user_room_stats
+     (user_id, username, room, level, exp, gold_apples, last_login_reward)
      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
         [user.id, user.username, room, level, exp, gold_apples, today]
       );
       // 🔹 新增 gift_logs 記錄
-      await pool.query(
-        `INSERT INTO gift_logs 
+      if (dailyReward > 0) {
+        await pool.query(
+          `INSERT INTO gift_logs
    (room, sender, receiver, receiver_id, item_type, amount, created_at)
    VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [room, 'system', user.username, user.id, 'gold_apples', 1]
-      );
+          [room, 'system', user.username, user.id, 'gold_apples', dailyReward]
+        );
+      }
     } else {
       const stats = statsRes.rows[0];
       level = stats.level;
@@ -451,22 +465,24 @@ authRouter.post("/login", async (req, res) => {
         : null;
 
       if (lastReward !== today) {
-        rewardApple = 1;
-        gold_apples += 1;
+        rewardApple = dailyReward;
+        gold_apples += dailyReward;
 
         await pool.query(`
   UPDATE user_room_stats
-  SET gold_apples = gold_apples + 1,
-      last_login_reward = $1
-  WHERE user_id = $2 AND room = $3
-`, [today, user.id, room]);
+  SET gold_apples = gold_apples + $1,
+      last_login_reward = $2
+  WHERE user_id = $3 AND room = $4
+`, [dailyReward, today, user.id, room]);
         // 🔹 新增 gift_logs 記錄
-        await pool.query(
-          `INSERT INTO gift_logs 
+        if (dailyReward > 0) {
+          await pool.query(
+            `INSERT INTO gift_logs
    (room, sender, receiver, receiver_id, item_type, amount, created_at)
    VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [room, 'system', user.username, user.id, 'gold_apples', 1]
-        );
+            [room, 'system', user.username, user.id, 'gold_apples', dailyReward]
+          );
+        }
       }
     }
 

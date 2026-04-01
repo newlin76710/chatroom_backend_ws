@@ -28,7 +28,6 @@ export function songSocket(io, socket) {
 
     const MINUTE_2 = 2 * 60 * 1000;
     const expToAdd = 100;
-    const applesToAdd = 2; // ⭐ 每次唱歌給 2 顆金蘋果
 
     const duration = Date.now() - state.singStartTime;
     state.singStartTime = null; // 清掉計時器 / 時間紀錄
@@ -36,6 +35,13 @@ export function songSocket(io, socket) {
     if (duration < MINUTE_2) return; // 未達 2 分鐘，不加
 
     try {
+      // ⭐ 從設定取唱歌獎勵，預設 2
+      const settingsRes = await pool.query(
+        `SELECT singing_reward FROM room_settings WHERE room = $1`,
+        [room]
+      );
+      const applesToAdd = settingsRes.rows.length ? settingsRes.rows[0].singing_reward : 2;
+
       const res = await pool.query(
         `
     SELECT u.id, urs.level, urs.exp
