@@ -123,14 +123,14 @@ export const createTransferRouter = (io) => {
 
                 const sentTodayRes = await client.query(
                     `SELECT COALESCE(SUM(amount), 0) AS total_sent
-                     FROM gift_logs
-                     WHERE room = $1
-                       AND sender = $2
-                       AND receiver != $2
-                       AND item_type = 'gold_apples'
-                       AND amount > 0
-                       AND (created_at AT TIME ZONE 'Asia/Taipei')::date = $3::date`,
-                    [ROOM, sender.username, todayTaiwan]
+                        FROM gift_logs
+                        WHERE room = $1
+                        AND sender_id = $2
+                        AND receiver_id != $2
+                        AND item_type = 'gold_apples'
+                        AND amount > 0
+                        AND (created_at AT TIME ZONE 'Asia/Taipei')::date = $3::date`,
+                    [ROOM, sender.id, todayTaiwan]
                 );
 
                 const sentToday = parseInt(sentTodayRes.rows[0].total_sent, 10);
