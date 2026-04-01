@@ -165,17 +165,15 @@ export const createTransferRouter = (io) => {
             // 🔹 寫入 gift_logs (保留 username)
             await client.query(
                 `INSERT INTO gift_logs 
-   (room, sender, receiver, receiver_id, item_type, amount)
-   VALUES 
-   ($1, $2, $3, $4, $5, $6),
-   ($7, $8, $9, $10, $11, $12)`,
-
+        (room, sender, sender_id, receiver, receiver_id, item_type, amount)
+     VALUES 
+        ($1, $2, $3, $4, $5, $6, $7),
+        ($8, $9, $10, $11, $12, $13, $14)`,
                 [
                     // sender 扣
-                    ROOM, sender.username, sender.username, sender.id, "gold_apples", -actualTransfer,
-
+                    ROOM, sender.username, sender.id, sender.username, sender.id, "gold_apples", -actualTransfer,
                     // receiver 加
-                    ROOM, sender.username, targetUser.username, targetUser.user_id, "gold_apples", actualTransfer
+                    ROOM, sender.username, sender.id, targetUser.username, targetUser.user_id, "gold_apples", actualTransfer
                 ]
             );
 
