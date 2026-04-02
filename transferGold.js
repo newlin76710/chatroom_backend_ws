@@ -20,6 +20,58 @@ export function randomRosePoem() {
     return rosePoems[Math.floor(Math.random() * rosePoems.length)];
 }
 
+const chocolatePoems = [
+    "一方黑巧入掌心，甜苦交織是深情；無聲勝過千言語，融化你我此刻心。",
+    "可可香氣漫夜空，一片深情輕輕送；甜蜜不需多言語，巧克力裡藏溫柔。",
+    "黑巧如墨映月光，苦中帶甜似你樣；今夜一片輕相贈，願你心中暖洋洋。",
+    "可可田裡藏秘語，一顆一顆釀成詩；贈你這份苦甜味，希望你能懂我意。",
+    "絲滑巧克力入喉，甜意悄悄上心頭；不說愛你說太早，先讓巧克力開口。",
+    "一塊巧克力，一片真心意；甜蜜藏其中，請你細細品。",
+    "可可香濃夜未央，贈君一片暖心房；苦後回甘如人生，願你事事皆如願。",
+    "深夜送上小巧克，一份心意莫推辭；甜蜜滋味慢慢品，願你笑顏常如此。",
+    "黑巧融入白月光，你的笑容比糖甜；一片巧克力輕輕放，願你今晚好夢甜。",
+    "可可豆裡種下情，烘焙成詩贈給你；每一口都是思念，每一塊都是心意。",
+    "巧克力如你眼眸，深邃甜蜜又溫柔；今夜一片輕輕送，望你夢裡有我候。",
+    "苦甜交融是巧克，人生滋味亦如此；贈你一片小心意，願苦少來甜常隨。",
+    "可可香從遠方來，化作甜蜜入心懷；一片巧克力相贈，願你開心每一天。",
+    "深夜的巧克力香，像你留下的溫暖；一口甜蜜一口念，思念藏在可可間。",
+    "黑巧白巧皆是情，今夜贈你最真心；願這甜蜜陪你夢，夢裡笑聲不停歇。",
+    "巧克力碎輕輕落，如星灑落在你前；一片一片都是愛，請你慢慢細細嚐。",
+    "可可飄香過長夜，一片真情難言說；甜蜜滋味君自知，願你心中有暖陽。",
+    "輕輕一片巧克力，重重一份心裡情；不敢多說愛你語，先把甜蜜送到你。",
+    "可可豆香繞指尖，融化心間是思念；今夜贈你小甜蜜，願你笑顏如花展。",
+    "一方巧克力在手，千言萬語化成甜；贈你今夜好心情，願你夢裡盡是歡。"
+];
+export function randomChocolatePoem() {
+    return chocolatePoems[Math.floor(Math.random() * chocolatePoems.length)];
+}
+
+const cakePoems = [
+    "一層一層疊心意，奶油之上寫思念；今日贈你一塊蛋糕，願你每天甜如蜜。",
+    "奶油香氣滿屋間，一口蛋糕暖心田；贈你這份小甜蜜，願你笑顏如春天。",
+    "草莓點綴在蛋糕，如你笑靨映日光；一塊心意輕輕送，願你生活甜又香。",
+    "蛋糕鬆軟似雲朵，奶油細滑如你心；今夜一塊輕相贈，願你夢裡皆是甜。",
+    "生日也好平日也好，一塊蛋糕表心跡；甜蜜滋味慢慢品，願你事事都如意。",
+    "奶油玫瑰開蛋糕，送上心意送祝福；一口甜蜜一口笑，願你天天樂無憂。",
+    "蛋糕香氣隨風來，帶著我的小期待；贈你一塊甜滋味，願你笑口常常開。",
+    "多層蛋糕疊情深，每一層都是心聲；今夜輕輕送到你，願你感受到我情。",
+    "奶油花開在蛋糕，如你笑顏燦若花；一塊甜蜜輕輕贈，願你快樂無牽掛。",
+    "鬆軟蛋糕配奶油，甜蜜滋味說不完；贈你今日一份甜，願你心中無憂愁。",
+    "一塊蛋糕藏心語，奶油之間有深情；不說太多只送甜，願你懂得我心意。",
+    "蛋糕甜香入夢來，如你溫柔伴我懷；今夜一塊輕相贈，願你笑顏常相開。",
+    "奶油疊上又一層，每層都是祝福情；今日贈你蛋糕甜，願你生活更圓滿。",
+    "草莓蛋糕送到你，甜中帶酸似人生；願你品得其中味，苦盡甘來好心情。",
+    "蛋糕柔軟如你心，奶油香甜如你笑；今夜一塊真心贈，願你長樂又長好。",
+    "一刀切下蛋糕時，切出我的一片情；送你甜蜜送心意，願你事事皆稱心。",
+    "奶油香氣飄四方，蛋糕甜蜜入心房；今夜贈你這份甜，願你夢裡有陽光。",
+    "多層夾心蛋糕裡，藏著我的小秘密；每一口都是心意，願你感受到甜蜜。",
+    "蛋糕上的小玫瑰，像是我送你的情；一口甜蜜一口暖，願你永遠都開心。",
+    "輕輕送上一塊蛋糕，重重帶著我心意；甜蜜滋味你先嚐，快樂全都歸給你。"
+];
+export function randomCakePoem() {
+    return cakePoems[Math.floor(Math.random() * cakePoems.length)];
+}
+
 export const createTransferRouter = (io) => {
     const router = express.Router();
     const ROOM = process.env.ROOMNAME || "windsong";
@@ -349,7 +401,10 @@ export const createTransferRouter = (io) => {
             const { type = "gold_apples", range = "monthly" } = req.query;
             const TOP_N = Math.min(parseInt(req.query.top || "10", 10), 100);
 
-            if (!["gold_apples", "rose", "firework"].includes(type)) {
+            const CHARM_TYPES = ["rose", "chocolate", "cake"];
+            const isCharm = CHARM_TYPES.includes(type);
+
+            if (!["gold_apples", "firework", ...CHARM_TYPES].includes(type)) {
                 return res.status(400).json({ success: false, error: "type 參數錯誤" });
             }
 
@@ -397,69 +452,90 @@ export const createTransferRouter = (io) => {
             // 🏆 總排行榜（直接統計表）
             // =============================
             if (range === "total") {
-                const columnMap = {
-                    gold_apples: "gold_apples",
-                    rose: "rose",
-                    firework: "firework"
-                };
-
-                const col = columnMap[type];
-
-                const totalRes = await client.query(
-                    `
-                SELECT u.username, urs.${col} AS amount
-                FROM users u
-                JOIN user_room_stats urs ON u.id = urs.user_id
-                WHERE urs.room = $1
-                  AND urs.level < $2
-                ORDER BY urs.${col} DESC
-                LIMIT $3
-                `,
-                    [ROOM, ANL, TOP_N]
-                );
-
-                result = totalRes.rows;
+                if (isCharm) {
+                    // 魅力榜：rose + chocolate + cake 合計，各別回傳
+                    const totalRes = await client.query(
+                        `
+                        SELECT u.username,
+                            COALESCE(urs.rose, 0)        AS rose,
+                            COALESCE(urs.chocolate, 0)   AS chocolate,
+                            COALESCE(urs.cake, 0)        AS cake,
+                            (COALESCE(urs.rose, 0) + COALESCE(urs.chocolate, 0) + COALESCE(urs.cake, 0)) AS total
+                        FROM users u
+                        JOIN user_room_stats urs ON u.id = urs.user_id
+                        WHERE urs.room = $1
+                          AND urs.level < $2
+                        ORDER BY total DESC
+                        LIMIT $3
+                        `,
+                        [ROOM, ANL, TOP_N]
+                    );
+                    result = totalRes.rows;
+                } else {
+                    const col = type; // gold_apples or firework
+                    const totalRes = await client.query(
+                        `
+                        SELECT u.username, urs.${col} AS amount
+                        FROM users u
+                        JOIN user_room_stats urs ON u.id = urs.user_id
+                        WHERE urs.room = $1
+                          AND urs.level < $2
+                        ORDER BY urs.${col} DESC
+                        LIMIT $3
+                        `,
+                        [ROOM, ANL, TOP_N]
+                    );
+                    result = totalRes.rows;
+                }
             } else {
                 // =============================
                 // 📊 月 / 上月（gift_logs）
                 // =============================
-                let query = `
-                SELECT 
-                    u.username,
-                    COALESCE(SUM(gl.amount), 0) AS amount
-                FROM users u
-                JOIN user_room_stats urs 
-                    ON u.id = urs.user_id
-                JOIN gift_logs gl 
-                    ON u.id = gl.receiver_id
-                WHERE gl.room = $1
-                  AND urs.room = $1
-                  AND urs.level < $2
-                  AND gl.item_type = $3
-            `;
-
-                const params = [ROOM, ANL, type];
-
-                if (startDate) {
-                    params.push(startDate);
-                    query += ` AND gl.created_at >= $${params.length}`;
+                if (isCharm) {
+                    // 魅力榜：三種禮物合計，各別回傳
+                    let query = `
+                        SELECT
+                            u.username,
+                            COALESCE(SUM(CASE WHEN gl.item_type = 'rose'      THEN gl.amount ELSE 0 END), 0) AS rose,
+                            COALESCE(SUM(CASE WHEN gl.item_type = 'chocolate' THEN gl.amount ELSE 0 END), 0) AS chocolate,
+                            COALESCE(SUM(CASE WHEN gl.item_type = 'cake'      THEN gl.amount ELSE 0 END), 0) AS cake,
+                            COALESCE(SUM(gl.amount), 0) AS total
+                        FROM users u
+                        JOIN user_room_stats urs ON u.id = urs.user_id
+                        JOIN gift_logs gl ON u.id = gl.receiver_id
+                        WHERE gl.room = $1
+                          AND urs.room = $1
+                          AND urs.level < $2
+                          AND gl.item_type IN ('rose', 'chocolate', 'cake')
+                    `;
+                    const params = [ROOM, ANL];
+                    if (startDate) { params.push(startDate); query += ` AND gl.created_at >= $${params.length}`; }
+                    if (endDate)   { params.push(endDate);   query += ` AND gl.created_at < $${params.length}`; }
+                    query += ` GROUP BY u.username ORDER BY total DESC LIMIT $${params.length + 1}`;
+                    params.push(TOP_N);
+                    const charmRes = await client.query(query, params);
+                    result = charmRes.rows;
+                } else {
+                    let query = `
+                        SELECT
+                            u.username,
+                            COALESCE(SUM(gl.amount), 0) AS amount
+                        FROM users u
+                        JOIN user_room_stats urs ON u.id = urs.user_id
+                        JOIN gift_logs gl ON u.id = gl.receiver_id
+                        WHERE gl.room = $1
+                          AND urs.room = $1
+                          AND urs.level < $2
+                          AND gl.item_type = $3
+                    `;
+                    const params = [ROOM, ANL, type];
+                    if (startDate) { params.push(startDate); query += ` AND gl.created_at >= $${params.length}`; }
+                    if (endDate)   { params.push(endDate);   query += ` AND gl.created_at < $${params.length}`; }
+                    query += ` GROUP BY u.username ORDER BY amount DESC LIMIT $${params.length + 1}`;
+                    params.push(TOP_N);
+                    const monthlyRes = await client.query(query, params);
+                    result = monthlyRes.rows;
                 }
-
-                if (endDate) {
-                    params.push(endDate);
-                    query += ` AND gl.created_at < $${params.length}`; // ⚠️ 重點
-                }
-
-                query += `
-                GROUP BY u.username
-                ORDER BY amount DESC
-                LIMIT $${params.length + 1}
-            `;
-
-                params.push(TOP_N);
-
-                const monthlyRes = await client.query(query, params);
-                result = monthlyRes.rows;
             }
 
             return res.json({
@@ -481,10 +557,12 @@ export const createTransferRouter = (io) => {
     });
 
     const SHOP_ITEMS = {
-        rose: { name: "🌹 玫瑰", price: 5, type: "gift", image: "/gifts/rose.gif" },
-        firework: { name: "🎆 放煙火", price: 15, type: "firework", image: "/gifts/firework.gif" },
-        ball: { name: "🔮 積分球", price: 30, type: "exp", exp: 1000 },
-        rename: { name: "✏️ 升級卡", price: 1000, type: "levelUp" },
+        rose:      { name: "🌹 玫瑰",   price: 5,    type: "gift",     image: "/gifts/rose.gif",      poem: randomRosePoem,      giftMsg: (from, to, poem) => `${from} 獻給 ${to} 一朵玫瑰 🌹\n${poem}` },
+        chocolate: { name: "🍫 巧克力", price: 5,    type: "gift",     image: "/gifts/chocolate.gif", poem: randomChocolatePoem, giftMsg: (from, to, poem) => `${from} 送給 ${to} 一盒巧克力 🍫\n${poem}` },
+        cake:      { name: "🎂 蛋糕",   price: 5,    type: "gift",     image: "/gifts/cake.gif",      poem: randomCakePoem,      giftMsg: (from, to, poem) => `${from} 送給 ${to} 一塊蛋糕 🎂\n${poem}` },
+        firework:  { name: "🎆 放煙火", price: 15,   type: "firework", image: "/gifts/firework.gif" },
+        ball:      { name: "🔮 積分球", price: 30,   type: "exp",      exp: 1000 },
+        rename:    { name: "✏️ 升級卡", price: 1000, type: "levelUp" },
     };
     router.post("/shop/buy", authMiddleware, async (req, res) => {
         const { itemId } = req.body;
@@ -549,7 +627,7 @@ export const createTransferRouter = (io) => {
                     await client.query("ROLLBACK");
                     return res.status(400).json({ error: "對方不在線上" });
                 }
-                const poem = randomRosePoem();
+                const poem = item.poem();
                 // ⭐ 寫入 gift_logs
                 const targetRes = await client.query(
                     `SELECT id FROM users WHERE username = $1`,
@@ -562,30 +640,36 @@ export const createTransferRouter = (io) => {
                     return res.status(400).json({ error: "使用者不存在" });
                 }
                 await client.query(
-                    `INSERT INTO gift_logs 
+                    `INSERT INTO gift_logs
    (room, sender, receiver, receiver_id, item_type, amount)
    VALUES ($1, $2, $3, $4, $5, $6)`,
-
-                    [ROOM, buyer.username, targetName, receiverId, "rose", 1]
+                    [ROOM, buyer.username, targetName, receiverId, itemId, 1]
                 );
-                // 🔹 更新 user_room_stats 對方的 rose
+                // 🔹 更新 user_room_stats 對方對應欄位
                 await client.query(
                     `UPDATE user_room_stats
-   SET rose = COALESCE(rose, 0) + 1
+   SET ${itemId} = COALESCE(${itemId}, 0) + 1
    WHERE user_id = $1 AND room = $2`,
                     [receiverId, ROOM]
+                );
+                // 🔹 好感度 +5
+                await client.query(
+                    `INSERT INTO user_affinity (from_user_id, to_user_id, affinity, updated_at)
+                     VALUES ($1, $2, 5, NOW())
+                     ON CONFLICT (from_user_id, to_user_id)
+                     DO UPDATE SET affinity = user_affinity.affinity + 5, updated_at = NOW()`,
+                    [buyer.id, receiverId]
                 );
                 // 廣播專屬禮物訊息
                 io.to(ROOM).emit("giftMessage", {
                     from: buyer.username,
                     to: targetName,
                     item: item.name,
-                    // 這裡可放玫瑰大圖 URL 或 GIF
                     imageUrl: item.image,
-                    message: `獻上一朵玫瑰 🌹\n${poem}`
+                    message: item.giftMsg(buyer.username, targetName, poem)
                 });
                 // 🔹 更新 rooms 緩存
-                if (target) target.rose = (target.rose || 0) + 1;
+                if (target) target[itemId] = (target[itemId] || 0) + 1;
             }
             if (item.type === "firework") {
                 // ⭐ 寫入 gift_logs
