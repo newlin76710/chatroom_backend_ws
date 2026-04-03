@@ -565,7 +565,10 @@ export const createTransferRouter = (io) => {
         rename:    { name: "✏️ 升級卡", price: 1000, type: "levelUp" },
     };
     const CAKE_VARIANTS = {
-        birthday:       { emoji: "🎂", name: "生日蛋糕",   image: "/gifts/cake_birthday.gif" },
+        original:       { emoji: "🎂", name: "原味蛋糕",   image: "/gifts/cake.gif" },
+        pink:           { emoji: "🩷", name: "淑女蛋糕",   image: "/gifts/cake_pink.gif" },
+        blue:           { emoji: "🎩", name: "紳士蛋糕",   image: "/gifts/cake_blue.gif" },
+        birthday:       { emoji: "🎉", name: "生日蛋糕",   image: "/gifts/cake_birthday.gif" },
         strawberry:     { emoji: "🍓", name: "草莓蛋糕",   image: "/gifts/cake_strawberry.gif" },
         lemon:          { emoji: "🍋", name: "檸檬蛋糕",   image: "/gifts/cake_lemon.gif" },
         chocolate_cake: { emoji: "🍫", name: "巧克力蛋糕", image: "/gifts/cake_chocolate.gif" },
