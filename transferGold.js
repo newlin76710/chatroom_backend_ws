@@ -564,12 +564,31 @@ export const createTransferRouter = (io) => {
         ball:      { name: "🔮 積分球", price: 30,   type: "exp",      exp: 1000 },
         rename:    { name: "✏️ 升級卡", price: 1000, type: "levelUp" },
     };
+    const CAKE_VARIANTS = {
+        birthday:       { emoji: "🎂", name: "生日蛋糕",   image: "/gifts/cake_birthday.gif" },
+        strawberry:     { emoji: "🍓", name: "草莓蛋糕",   image: "/gifts/cake_strawberry.gif" },
+        lemon:          { emoji: "🍋", name: "檸檬蛋糕",   image: "/gifts/cake_lemon.gif" },
+        chocolate_cake: { emoji: "🍫", name: "巧克力蛋糕", image: "/gifts/cake_chocolate.gif" },
+        cupcake:        { emoji: "🧁", name: "杯子蛋糕",   image: "/gifts/cake_cupcake.gif" },
+    };
+
     router.post("/shop/buy", authMiddleware, async (req, res) => {
-        const { itemId } = req.body;
+        const { itemId, cakeVariant } = req.body;
         const buyer = req.user;
-        const item = SHOP_ITEMS[itemId];
+        let item = SHOP_ITEMS[itemId];
         const MAX_LEVEL = ANL - 1;
         if (!item) return res.status(400).json({ error: "商品暫不開放" });
+
+        // 蛋糕款式覆蓋
+        if (itemId === "cake" && cakeVariant && CAKE_VARIANTS[cakeVariant]) {
+            const v = CAKE_VARIANTS[cakeVariant];
+            item = {
+                ...item,
+                name: `${v.emoji} ${v.name}`,
+                image: v.image,
+                giftMsg: (from, to, poem) => `${from} 送給 ${to} 一塊${v.name} ${v.emoji}\n${poem}`,
+            };
+        }
 
         const client = await pool.connect();
         try {
