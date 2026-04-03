@@ -471,7 +471,7 @@ adminRouter.get("/surprise-history", authMiddleware, async (req, res) => {
     const offset   = (page - 1) * pageSize;
 
     const totalRes = await pool.query(
-      `SELECT COUNT(*) FROM surprise_gold_logs WHERE room = $1`,
+      `SELECT COUNT(*) FROM surprise_gold_logs WHERE room = $1 AND triggered_at IS NOT NULL`,
       [ROOM]
     );
     const total = parseInt(totalRes.rows[0].count, 10);
@@ -479,7 +479,7 @@ adminRouter.get("/surprise-history", authMiddleware, async (req, res) => {
     const dataRes = await pool.query(
       `SELECT id, scheduled_time, winner, amount, triggered_at
        FROM surprise_gold_logs
-       WHERE room = $1
+       WHERE room = $1 AND triggered_at IS NOT NULL
        ORDER BY scheduled_time DESC
        LIMIT $2 OFFSET $3`,
       [ROOM, pageSize, offset]
