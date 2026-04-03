@@ -461,7 +461,7 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
   }
 });
 
-/* ================= 驚喜金蘋果紀錄（所有登入用戶可查） ================= */
+/* ================= 樂透金蘋果紀錄（所有登入用戶可查） ================= */
 adminRouter.get("/surprise-history", authMiddleware, async (req, res) => {
   try {
     if (!req.user) return res.status(401).json({ error: "未登入" });
@@ -487,7 +487,7 @@ adminRouter.get("/surprise-history", authMiddleware, async (req, res) => {
 
     res.json({ total, page, pageSize, logs: dataRes.rows });
   } catch (err) {
-    console.error("查詢驚喜紀錄失敗", err);
+    console.error("查詢樂透紀錄失敗", err);
     res.status(500).json({ error: "查詢失敗" });
   }
 });

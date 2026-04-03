@@ -1,4 +1,4 @@
-// surpriseGold.js — 每日金蘋果驚喜排程
+// surpriseGold.js — 每日金蘋果樂透排程
 import { pool } from "./db.js";
 import { songState } from "./socketHandlers.js";
 import { rooms } from "./chat.js";
@@ -36,7 +36,7 @@ async function ensureSchema() {
   `);
 }
 
-// ─── 觸發驚喜 ───────────────────────────────────────────────────────────────
+// ─── 觸發樂透 ───────────────────────────────────────────────────────────────
 async function triggerSurprise(io, logId) {
   try {
     const state = songState[ROOM];
@@ -90,14 +90,14 @@ async function triggerSurprise(io, logId) {
       [singer, singer ? amount : 0, logId]
     );
 
-    // 廣播驚喜事件
+    // 廣播樂透事件
     io.to(ROOM).emit("goldenAppleSurprise", {
       winner: singer,
       amount: singer ? amount : 0,
       triggeredAt: new Date().toISOString(),
     });
 
-    console.log(`[Surprise] 驚喜觸發！得獎者: ${singer || '無'}, 金蘋果: ${singer ? amount : 0}`);
+    console.log(`[Surprise] 樂透觸發！得獎者: ${singer || '無'}, 金蘋果: ${singer ? amount : 0}`);
 
     // 台灣時間隔天 00:01 再排下一次
     const tomorrowTW = new Date(Date.now() + TW_OFFSET_MS);
@@ -112,7 +112,7 @@ async function triggerSurprise(io, logId) {
   }
 }
 
-// ─── 排程指定日的驚喜 ────────────────────────────────────────────────────────
+// ─── 排程指定日的樂透 ────────────────────────────────────────────────────────
 async function scheduleDay(io, dayDate) {
   try {
     const dateStr = twDateStr(dayDate); // 台灣日期字串
@@ -162,7 +162,7 @@ async function scheduleDay(io, dayDate) {
 
     const delay = randomTime.getTime() - Date.now();
     const twStr = randomTime.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
-    console.log(`[Surprise] ${dateStr}（台灣）驚喜排程: ${twStr}（${Math.round(delay / 60000)} 分鐘後）`);
+    console.log(`[Surprise] ${dateStr}（台灣）樂透排程: ${twStr}（${Math.round(delay / 60000)} 分鐘後）`);
     setTimeout(() => triggerSurprise(io, res.rows[0].id), delay);
 
   } catch (err) {
