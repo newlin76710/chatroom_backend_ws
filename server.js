@@ -17,6 +17,7 @@ import { nicknameRouter } from "./blockNickname.js";
 import { announcementRouter } from "./announcementRouter.js";
 import { messageBoardRouter } from "./messageBoardRouter.js";
 import { createTransferRouter } from "./transferGold.js";
+import { initSurpriseScheduler } from "./surpriseGold.js";
 process.on('exit', (code) => console.log('Process exit code:', code));
 process.on('SIGTERM', () => console.log('SIGTERM received'));
 process.on('SIGINT', () => console.log('SIGINT received'));
@@ -224,4 +225,5 @@ const port = process.env.PORT || 10000;
 server.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log("Server started at:", new Date());
+  initSurpriseScheduler(io);
 });
