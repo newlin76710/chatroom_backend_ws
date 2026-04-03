@@ -4,6 +4,19 @@ import { songState } from "./socketHandlers.js";
 import { rooms } from "./chat.js";
 
 const ROOM = process.env.ROOMNAME || 'windsong';
+const TW_OFFSET_MS = 8 * 60 * 60 * 1000; // UTC+8
+
+// 取得台灣今日的 YYYY-MM-DD 字串
+function twDateStr(date = new Date()) {
+  return new Date(date.getTime() + TW_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+// 建立台灣時間當天指定 hour/minute 的 Date（UTC）
+function twTime(date, hour, minute = 0) {
+  const d = new Date(date.getTime() + TW_OFFSET_MS); // 轉成台灣日期
+  d.setUTCHours(hour - 8, minute, 0, 0);              // 再轉回 UTC 儲存
+  return d;
+}
 
 // ─── 確保 schema ────────────────────────────────────────────────────────────
 async function ensureSchema() {
@@ -86,12 +99,13 @@ async function triggerSurprise(io, logId) {
 
     console.log(`[Surprise] 驚喜觸發！得獎者: ${singer || '無'}, 金蘋果: ${singer ? amount : 0}`);
 
-    // 隔天 00:01 再排下一次
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 1, 0, 0);
-    const delay = tomorrow.getTime() - Date.now();
-    setTimeout(() => scheduleDay(io, tomorrow), delay);
+    // 台灣時間隔天 00:01 再排下一次
+    const tomorrowTW = new Date(Date.now() + TW_OFFSET_MS);
+    tomorrowTW.setUTCDate(tomorrowTW.getUTCDate() + 1);
+    tomorrowTW.setUTCHours(0, 1, 0, 0); // 台灣 00:01 = UTC 16:01 前天
+    const tomorrowUTC = new Date(tomorrowTW.getTime() - TW_OFFSET_MS);
+    const delay = tomorrowUTC.getTime() - Date.now();
+    setTimeout(() => scheduleDay(io, tomorrowUTC), delay);
 
   } catch (err) {
     console.error('[Surprise] 觸發失敗:', err);
@@ -101,12 +115,13 @@ async function triggerSurprise(io, logId) {
 // ─── 排程指定日的驚喜 ────────────────────────────────────────────────────────
 async function scheduleDay(io, dayDate) {
   try {
-    const dateStr = dayDate.toISOString().slice(0, 10);
+    const dateStr = twDateStr(dayDate); // 台灣日期字串
 
-    // 先查今天是否已有紀錄
+    // 先查今天（台灣時間）是否已有紀錄
     const existing = await pool.query(
       `SELECT id, scheduled_time, triggered_at FROM surprise_gold_logs
-       WHERE room = $1 AND DATE(scheduled_time) = $2::date
+       WHERE room = $1
+         AND DATE(scheduled_time AT TIME ZONE 'Asia/Taipei') = $2::date
        ORDER BY id DESC LIMIT 1`,
       [ROOM, dateStr]
     );
@@ -114,13 +129,13 @@ async function scheduleDay(io, dayDate) {
     if (existing.rows.length > 0) {
       const rec = existing.rows[0];
       if (rec.triggered_at) {
-        console.log(`[Surprise] ${dateStr} 已觸發，略過`);
+        console.log(`[Surprise] ${dateStr}（台灣）已觸發，略過`);
         return;
       }
       const t = new Date(rec.scheduled_time);
       const delay = t.getTime() - Date.now();
       if (delay > 0) {
-        console.log(`[Surprise] 恢復排程 ${t.toLocaleString()}`);
+        console.log(`[Surprise] 恢復排程 ${t.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}`);
         setTimeout(() => triggerSurprise(io, rec.id), delay);
       } else {
         // 時間已過（伺服器重啟）：立即觸發
@@ -129,15 +144,13 @@ async function scheduleDay(io, dayDate) {
       return;
     }
 
-    // 無紀錄，隨機一個時間（8:00–23:00 伺服器時間）
-    const from = new Date(dayDate);
-    from.setHours(8, 0, 0, 0);
-    const to = new Date(dayDate);
-    to.setHours(23, 0, 0, 0);
+    // 無紀錄，隨機一個台灣時間 08:00–23:00
+    const from = twTime(dayDate, 8);
+    const to   = twTime(dayDate, 23);
 
     const minMs = Math.max(Date.now() + 60 * 1000, from.getTime());
     if (minMs >= to.getTime()) {
-      console.log(`[Surprise] ${dateStr} 可用時間不足，略過`);
+      console.log(`[Surprise] ${dateStr}（台灣）可用時間不足，略過`);
       return;
     }
 
@@ -148,7 +161,8 @@ async function scheduleDay(io, dayDate) {
     );
 
     const delay = randomTime.getTime() - Date.now();
-    console.log(`[Surprise] ${dateStr} 驚喜排程: ${randomTime.toLocaleString()}（${Math.round(delay / 60000)} 分鐘後）`);
+    const twStr = randomTime.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+    console.log(`[Surprise] ${dateStr}（台灣）驚喜排程: ${twStr}（${Math.round(delay / 60000)} 分鐘後）`);
     setTimeout(() => triggerSurprise(io, res.rows[0].id), delay);
 
   } catch (err) {
