@@ -99,13 +99,12 @@ async function triggerSurprise(io, logId) {
 
     console.log(`[Surprise] 樂透觸發！得獎者: ${singer || '無'}, 金蘋果: ${singer ? amount : 0}`);
 
-    // 台灣時間隔天 00:01 再排下一次
+    // 立即為明天建立排程（寫入 DB），不等到午夜，避免伺服器重啟後遺失 setTimeout
     const tomorrowTW = new Date(Date.now() + TW_OFFSET_MS);
     tomorrowTW.setUTCDate(tomorrowTW.getUTCDate() + 1);
-    tomorrowTW.setUTCHours(0, 1, 0, 0); // 台灣 00:01 = UTC 16:01 前天
+    tomorrowTW.setUTCHours(0, 0, 0, 0);
     const tomorrowUTC = new Date(tomorrowTW.getTime() - TW_OFFSET_MS);
-    const delay = tomorrowUTC.getTime() - Date.now();
-    setTimeout(() => scheduleDay(io, tomorrowUTC), delay);
+    scheduleDay(io, tomorrowUTC);
 
   } catch (err) {
     console.error('[Surprise] 觸發失敗:', err);
@@ -144,17 +143,38 @@ async function scheduleDay(io, dayDate) {
       return;
     }
 
-    // 無紀錄，隨機一個台灣時間 08:00–23:00
-    const from = twTime(dayDate, 8);
-    const to   = twTime(dayDate, 23);
+    // 全天隨機，排除 04:30–04:35（語音主機重啟時段）
+    const dayStart  = twTime(dayDate, 0, 0);
+    const exclStart = twTime(dayDate, 4, 30);
+    const exclEnd   = twTime(dayDate, 4, 35);
+    const dayEnd    = twTime(dayDate, 23, 59);
 
-    const minMs = Math.max(Date.now() + 60 * 1000, from.getTime());
-    if (minMs >= to.getTime()) {
+    // 兩段可用區間：[00:00, 04:30) 和 [04:35, 23:59]
+    const segments = [
+      { from: dayStart,  to: exclStart },
+      { from: exclEnd,   to: dayEnd    },
+    ].map(seg => ({
+      from: new Date(Math.max(Date.now() + 60 * 1000, seg.from.getTime())),
+      to:   seg.to,
+    })).filter(seg => seg.from.getTime() < seg.to.getTime());
+
+    if (segments.length === 0) {
       console.log(`[Surprise] ${dateStr}（台灣）可用時間不足，略過`);
       return;
     }
 
-    const randomTime = new Date(minMs + Math.random() * (to.getTime() - minMs));
+    // 依各段長度加權隨機挑一段，再在該段內隨機
+    const weights = segments.map(s => s.to.getTime() - s.from.getTime());
+    const total   = weights.reduce((a, b) => a + b, 0);
+    let pick = Math.random() * total;
+    const seg = segments.find(s => {
+      const w = s.to.getTime() - s.from.getTime();
+      if (pick < w) return true;
+      pick -= w;
+      return false;
+    }) || segments[segments.length - 1];
+
+    const randomTime = new Date(seg.from.getTime() + Math.random() * (seg.to.getTime() - seg.from.getTime()));
     const res = await pool.query(
       `INSERT INTO surprise_gold_logs (room, scheduled_time) VALUES ($1, $2) RETURNING id`,
       [ROOM, randomTime]
