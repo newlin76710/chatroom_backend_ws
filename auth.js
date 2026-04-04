@@ -132,7 +132,7 @@ export const authMiddleware = async (req, res, next) => {
 
     // 先抓 users
     const userRes = await pool.query(
-      `SELECT id, username, gender, avatar, account_type
+      `SELECT id, username, gender, avatar, account_type, birthday, phone_confirm, email_confirm
        FROM users
        WHERE username=$1`,
       [username]
@@ -177,6 +177,9 @@ authRouter.get("/me", authMiddleware, async (req, res) => {
       gender: user.gender,
       avatar: user.avatar,
       account_type: user.account_type,
+      birthday: user.birthday,
+      phone_confirm: user.phone_confirm,
+      email_confirm: user.email_confirm,
       level: user.level,
       exp: user.exp,
       gold_apples: user.gold_apples,
@@ -307,7 +310,7 @@ authRouter.post("/guest", _loginLimiter, async (req, res) => {
 authRouter.post("/register", _registerLimiter, async (req, res) => {
   try {
     const ip = getClientIP(req);
-    const { username, password, gender, phone, email, avatar } = req.body;
+    const { username, password, gender, phone, email, avatar, birthday } = req.body;
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
         error: "暱稱最多 6 個中文字 或 12 個英數字",
@@ -332,9 +335,11 @@ authRouter.post("/register", _registerLimiter, async (req, res) => {
     // 轉換空字串
     const phoneValue = phone?.trim() || null;
     const emailValue = email?.trim() || null;
+    const birthdayValue = birthday?.trim() || null;
 
     const phoneRegex = /^[0-9]{8,11}$/;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const birthdayRegex = /^\d{4}-\d{2}-\d{2}$/;
 
     // 有填才驗證
     if (phoneValue && !phoneRegex.test(phoneValue)) {
@@ -345,15 +350,19 @@ authRouter.post("/register", _registerLimiter, async (req, res) => {
       return res.status(400).json({ error: "Email 格式錯誤" });
     }
 
+    if (birthdayValue && !birthdayRegex.test(birthdayValue)) {
+      return res.status(400).json({ error: "生日格式錯誤，請使用 YYYY-MM-DD" });
+    }
+
     const exist = await pool.query(`SELECT id FROM users WHERE username = $1`, [username]);
     if (exist.rowCount > 0) return res.status(400).json({ error: "帳號已存在" });
 
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      `INSERT INTO users 
-       (username, password, gender, phone, email, avatar, level, exp, register_ip)
-       VALUES ($1, $2, $3, $4, $5, $6, 2, 0, $7)
-       RETURNING id, username, gender, avatar, level, exp`,
+      `INSERT INTO users
+       (username, password, gender, phone, email, avatar, birthday, level, exp, register_ip)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 2, 0, $8)
+       RETURNING id, username, gender, avatar, birthday, level, exp`,
       [
         username,
         hash,
@@ -361,6 +370,7 @@ authRouter.post("/register", _registerLimiter, async (req, res) => {
         phoneValue,
         emailValue,
         avatar || null,
+        birthdayValue,
         ip || null
       ]
     );
@@ -423,7 +433,7 @@ authRouter.post("/login", _loginLimiter, async (req, res) => {
 
     // 從資料庫取得帳號資訊（密碼、基本資料）
     const result = await pool.query(
-      `SELECT id, username, password, avatar, gender, phone, email
+      `SELECT id, username, password, avatar, gender, phone, email, birthday, phone_confirm, email_confirm
        FROM users WHERE username=$1`,
       [username]
     );
@@ -542,6 +552,9 @@ authRouter.post("/login", _loginLimiter, async (req, res) => {
       gold_apples,
       gender: user.gender,
       avatar: user.avatar,
+      birthday: user.birthday,
+      phone_confirm: user.phone_confirm,
+      email_confirm: user.email_confirm,
       last_login: now,
       room,
       reward_apple: rewardApple
@@ -600,7 +613,7 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     if (user.account_type !== "account") {
       return res.status(403).json({ error: "訪客無法修改資料" });
     }
-    const { username, password, gender, avatar, phone, email } = req.body;
+    const { username, password, gender, avatar, phone, email, birthday } = req.body;
     if (!username || isNicknameTooLong(username)) {
       return res.status(400).json({
         error: "暱稱最多 6 個中文字 或 12 個英數字",
@@ -621,6 +634,8 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     // }
     const phoneRegex = /^[0-9]{8,11}$/;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const birthdayRegex = /^\d{4}-\d{2}-\d{2}$/;
+
     // 手機有填才驗證
     if (phone && !phoneRegex.test(phone)) {
       return res.status(400).json({ error: "手機格式錯誤" });
@@ -631,24 +646,49 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "Email 格式錯誤" });
     }
 
+    // 生日有填才驗證
+    const birthdayValue = birthday?.trim() || null;
+    if (birthdayValue && !birthdayRegex.test(birthdayValue)) {
+      return res.status(400).json({ error: "生日格式錯誤，請使用 YYYY-MM-DD" });
+    }
+
     // 如果有改密碼就 hash
     let hashedPassword = user.password; // 原本密碼
     if (password && password.trim() !== "") {
       hashedPassword = await bcrypt.hash(password, 10);
     }
 
+    // 取得舊的手機/email 以判斷是否有變更
+    const oldDataRes = await pool.query(
+      `SELECT phone, email FROM users WHERE id = $1`,
+      [user.id]
+    );
+    const oldData = oldDataRes.rows[0] || {};
+    const newPhone = phone?.trim() || null;
+    const newEmail = email?.trim() || null;
+
+    // 手機或 email 有變更則重置對應 confirm 狀態
+    const phoneChanged = newPhone !== (oldData.phone || null);
+    const emailChanged = newEmail !== (oldData.email || null);
+
     const updateRes = await pool.query(
-      `UPDATE users 
-     SET username = $1, password = $2, gender = $3, avatar = $4, phone = $5, email = $6
-     WHERE id = $7
-     RETURNING id, username, gender, avatar, level, exp`,
+      `UPDATE users
+     SET username = $1, password = $2, gender = $3, avatar = $4, phone = $5, email = $6,
+         birthday = $7,
+         phone_confirm = CASE WHEN $8 THEN false ELSE phone_confirm END,
+         email_confirm = CASE WHEN $9 THEN false ELSE email_confirm END
+     WHERE id = $10
+     RETURNING id, username, gender, avatar, birthday, phone_confirm, email_confirm`,
       [
         username || user.username,
         hashedPassword,
         gender || user.gender,
         avatar || user.avatar,
-        phone || null,
-        email || null,
+        newPhone,
+        newEmail,
+        birthdayValue,
+        phoneChanged,
+        emailChanged,
         user.id,
       ]
     );
