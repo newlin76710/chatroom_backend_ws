@@ -2,6 +2,7 @@
 import express from "express";
 import { pool } from "./db.js";
 import { authMiddleware } from "./auth.js"; // 驗證 token 並填 req.user
+import { rescheduleGoldGames } from "./goldAppleGame.js";
 
 export const adminRouter = express.Router();
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
@@ -387,12 +388,27 @@ adminRouter.get("/settings", authMiddleware, async (req, res) => {
 
     const result = await pool.query(
       `SELECT daily_login_reward, singing_reward, per_transfer_limit, daily_transfer_limit,
-              COALESCE(surprise_reward, 10) AS surprise_reward
+              COALESCE(surprise_reward,     10)   AS surprise_reward,
+              COALESCE(game1_enabled,       true) AS game1_enabled,
+              COALESCE(game1_hour,          20)   AS game1_hour,
+              COALESCE(game1_minute,        30)   AS game1_minute,
+              COALESCE(game1_apple_count,   5)    AS game1_apple_count,
+              COALESCE(game1_reward,        1)    AS game1_reward,
+              COALESCE(game2_enabled,       true) AS game2_enabled,
+              COALESCE(game2_hour,          20)   AS game2_hour,
+              COALESCE(game2_minute,        35)   AS game2_minute,
+              COALESCE(game2_reward,        25)   AS game2_reward
        FROM room_settings WHERE room = $1`,
       [ROOM]
     );
 
-    res.json(result.rows[0] || { daily_login_reward: 1, singing_reward: 2, per_transfer_limit: 0, daily_transfer_limit: 0, surprise_reward: 10 });
+    res.json(result.rows[0] || {
+      daily_login_reward: 1, singing_reward: 2, per_transfer_limit: 0,
+      daily_transfer_limit: 0, surprise_reward: 10,
+      game1_enabled: true, game1_hour: 20, game1_minute: 30,
+      game1_apple_count: 5, game1_reward: 1,
+      game2_enabled: true, game2_hour: 20, game2_minute: 35, game2_reward: 25,
+    });
   } catch (err) {
     console.error("取得設定失敗", err);
     res.status(500).json({ error: "查詢失敗" });
@@ -406,15 +422,42 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
     if (!user || user.level < AML)
       return res.status(403).json({ error: "權限不足" });
 
-    const { daily_login_reward, singing_reward, per_transfer_limit, daily_transfer_limit, surprise_reward } = req.body;
+    const {
+      daily_login_reward, singing_reward, per_transfer_limit,
+      daily_transfer_limit, surprise_reward,
+      game1_enabled, game1_hour, game1_minute, game1_apple_count, game1_reward,
+      game2_enabled, game2_hour, game2_minute, game2_reward,
+    } = req.body;
 
-    const fields = { daily_login_reward, singing_reward, per_transfer_limit, daily_transfer_limit, surprise_reward };
-    for (const [key, val] of Object.entries(fields)) {
+    // 整數欄位驗證
+    const intFields = {
+      daily_login_reward, singing_reward, per_transfer_limit,
+      daily_transfer_limit, surprise_reward,
+      game1_hour, game1_minute, game1_apple_count, game1_reward,
+      game2_hour, game2_minute, game2_reward,
+    };
+    for (const [key, val] of Object.entries(intFields)) {
       if (val !== undefined && (!Number.isInteger(val) || val < 0))
         return res.status(400).json({ error: `${key} 必須為非負整數` });
     }
 
-    if (Object.values(fields).every(v => v === undefined))
+    // 小時/分鐘範圍
+    if (game1_hour !== undefined && (game1_hour < 0 || game1_hour > 23))
+      return res.status(400).json({ error: 'game1_hour 必須為 0-23' });
+    if (game1_minute !== undefined && (game1_minute < 0 || game1_minute > 59))
+      return res.status(400).json({ error: 'game1_minute 必須為 0-59' });
+    if (game2_hour !== undefined && (game2_hour < 0 || game2_hour > 23))
+      return res.status(400).json({ error: 'game2_hour 必須為 0-23' });
+    if (game2_minute !== undefined && (game2_minute < 0 || game2_minute > 59))
+      return res.status(400).json({ error: 'game2_minute 必須為 0-59' });
+
+    const allFields = {
+      ...intFields,
+      game1_enabled: game1_enabled !== undefined ? Boolean(game1_enabled) : undefined,
+      game2_enabled: game2_enabled !== undefined ? Boolean(game2_enabled) : undefined,
+    };
+
+    if (Object.values(allFields).every(v => v === undefined))
       return res.status(400).json({ error: "沒有要更新的設定" });
 
     await pool.query(`
@@ -427,25 +470,18 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
     const values = [];
     let i = 1;
 
-    if (daily_login_reward !== undefined) {
-      updates.push(`daily_login_reward = $${i++}`);
-      values.push(daily_login_reward);
-    }
-    if (singing_reward !== undefined) {
-      updates.push(`singing_reward = $${i++}`);
-      values.push(singing_reward);
-    }
-    if (per_transfer_limit !== undefined) {
-      updates.push(`per_transfer_limit = $${i++}`);
-      values.push(per_transfer_limit);
-    }
-    if (daily_transfer_limit !== undefined) {
-      updates.push(`daily_transfer_limit = $${i++}`);
-      values.push(daily_transfer_limit);
-    }
-    if (surprise_reward !== undefined) {
-      updates.push(`surprise_reward = $${i++}`);
-      values.push(surprise_reward);
+    const colMap = {
+      daily_login_reward, singing_reward, per_transfer_limit,
+      daily_transfer_limit, surprise_reward,
+      game1_enabled, game1_hour, game1_minute, game1_apple_count, game1_reward,
+      game2_enabled, game2_hour, game2_minute, game2_reward,
+    };
+
+    for (const [col, val] of Object.entries(colMap)) {
+      if (val !== undefined) {
+        updates.push(`${col} = $${i++}`);
+        values.push(val);
+      }
     }
 
     values.push(ROOM);
@@ -453,6 +489,15 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
       `UPDATE room_settings SET ${updates.join(', ')} WHERE room = $${i}`,
       values
     );
+
+    // 若遊戲時間相關設定有變更，重新排程
+    const gameFields = [
+      'game1_enabled', 'game1_hour', 'game1_minute', 'game1_apple_count', 'game1_reward',
+      'game2_enabled', 'game2_hour', 'game2_minute', 'game2_reward',
+    ];
+    if (gameFields.some(f => colMap[f] !== undefined)) {
+      rescheduleGoldGames();
+    }
 
     res.json({ success: true });
   } catch (err) {

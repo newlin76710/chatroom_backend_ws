@@ -18,6 +18,7 @@ import { announcementRouter } from "./announcementRouter.js";
 import { messageBoardRouter } from "./messageBoardRouter.js";
 import { createTransferRouter } from "./transferGold.js";
 import { initSurpriseScheduler } from "./surpriseGold.js";
+import { initGoldGameScheduler, goldGameSocket } from "./goldAppleGame.js";
 process.on('exit', (code) => console.log('Process exit code:', code));
 process.on('SIGTERM', () => console.log('SIGTERM received'));
 process.on('SIGINT', () => console.log('SIGINT received'));
@@ -145,6 +146,12 @@ io.on("connection", socket => {
     console.error("songSocket error:", err.message);
   }
 
+  try {
+    goldGameSocket(io, socket);
+  } catch (err) {
+    console.error("goldGameSocket error:", err.message);
+  }
+
   socket.on("disconnect", reason => {
     console.log(`🔴 socket disconnected: ${socket.id}`, reason);
   });
@@ -226,4 +233,5 @@ server.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log("Server started at:", new Date());
   initSurpriseScheduler(io);
+  initGoldGameScheduler(io);
 });
