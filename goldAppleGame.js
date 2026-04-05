@@ -206,12 +206,13 @@ async function startGame1(io, settings) {
   }
 
   game1State = {
-    active:  true,
+    active:        true,
     apples,
-    catches: {},       // username → count
-    reward:  settings.game1_reward,
+    catches:       {},  // username → count
+    lastCatchTime: {},  // username → timestamp（節流用）
+    reward:        settings.game1_reward,
     logId,
-    timer:   null,
+    timer:         null,
   };
 
   io.to(ROOM).emit('goldGame1Start', {
@@ -267,11 +268,17 @@ async function handleCatchApple1(io, socket, { token, appleId }) {
   if (!userData) return;
   const username = userData.username;
 
-  // 找到未被撈的蘋果（同步，JS 單執行緒安全）
-  const apple = state.apples.find(a => a.id === appleId && !a.caught);
-  if (!apple) return;
+  // ① 每人 300ms 節流（畫面卡住積累的點擊一次過來時全擋掉）
+  const now = Date.now();
+  const last = state.lastCatchTime[username] || 0;
+  if (now - last < 300) return;
+  state.lastCatchTime[username] = now;
 
-  // 標記為已撈（同步）
+  // ② 找到未被撈的蘋果（同步，JS 單執行緒安全）
+  const apple = state.apples.find(a => a.id === appleId && !a.caught);
+  if (!apple) return;  // 已被撈過（server 端最終防線）
+
+  // ③ 標記為已撈（同步，確保同一顆蘋果不會被雙重獎勵）
   apple.caught = true;
   state.catches[username] = (state.catches[username] || 0) + 1;
   const userTotal = state.catches[username];
