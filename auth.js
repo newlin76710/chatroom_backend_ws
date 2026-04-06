@@ -496,7 +496,7 @@ authRouter.post("/login", _loginLimiter, async (req, res) => {
         `INSERT INTO user_room_stats
      (user_id, username, room, level, exp, gold_apples, last_login_reward)
      VALUES ($1,$2,$3,$4,$5,$6,$7)
-     ON CONFLICT (user_id, room) DO NOTHING`,
+     ON CONFLICT ON CONSTRAINT ux_user_room DO NOTHING`,
         [user.id, user.username, room, level, exp, gold_apples, today]
       );
 
@@ -728,6 +728,15 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
        RETURNING id, username, gender, avatar, birthday, phone_confirm, email_confirm`,
       hashedPassword ? [...baseParams, hashedPassword] : baseParams
     );
+
+    // 同步更新 user_room_stats 的 username，避免舊名稱殘留造成之後新用戶登入衝突
+    const newUsername = updateRes.rows[0]?.username;
+    if (newUsername) {
+      await pool.query(
+        `UPDATE user_room_stats SET username = $1 WHERE user_id = $2`,
+        [newUsername, user.id]
+      );
+    }
 
     res.json({ message: "修改成功", user: updateRes.rows[0] });
 
