@@ -327,16 +327,13 @@ async function startGame2(io, settings) {
     winTime: null,
     reward:  settings.game2_reward,
     logId,
-    timer:   null,
+    // 不限時，有人搶到才結束
   };
 
   io.to(ROOM).emit('goldGame2Start', {
-    duration: 60,
-    reward:   settings.game2_reward,
+    reward: settings.game2_reward,
   });
-  io.to(ROOM).emit('systemMessage', `🎰 大金蘋果出現了！第一個點到的人可得 ${settings.game2_reward} 顆金蘋果！`);
-
-  game2State.timer = setTimeout(() => endGame2(io), 60 * 1000);
+  io.to(ROOM).emit('systemMessage', `🔥 搶金蘋果！第一個點到的人可得 ${settings.game2_reward} 顆金蘋果！`);
 
   // 排程明天
   scheduleGame2(io);
@@ -346,14 +343,9 @@ async function endGame2(io) {
   if (!game2State?.active) return;
 
   const { winner, logId } = game2State;
-  if (game2State.timer) clearTimeout(game2State.timer);
   game2State = null;
 
   io.to(ROOM).emit('goldGame2End', { winner });
-
-  if (!winner) {
-    io.to(ROOM).emit('systemMessage', '😢 大金蘋果遊戲結束！一分鐘內無人撈到');
-  }
 
   if (logId) {
     pool.query(
@@ -390,14 +382,13 @@ async function handleCatchApple2(io, socket, { token }) {
   state.winner  = username;
   state.winTime = now;
 
-  // 立即結束遊戲
-  if (state.timer) clearTimeout(state.timer);
+  // 立即結束遊戲（不限時，無 timer 需清除）
   game2State = null;
 
   // 廣播獲獎
   io.to(ROOM).emit('goldGame2Won', { winner: username, reward });
   io.to(ROOM).emit('goldGame2End', { winner: username });
-  io.to(ROOM).emit('systemMessage', `🎉 ${username} 撈到了大金蘋果！獲得 ${reward} 顆金蘋果！`);
+  io.to(ROOM).emit('systemMessage', `🎉 ${username} 搶到了金蘋果！獲得 ${reward} 顆金蘋果！`);
 
   // DB 獎勵（非同步）
   const { logId } = state;
