@@ -160,7 +160,7 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
 adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
   try {
     const admin = req.user;
-    const { username, level } = req.body;
+    const { username, level, reason = "" } = req.body;
 
     if (!admin || admin.level < AML)
       return res.status(403).json({ error: "權限不足" });
@@ -171,28 +171,35 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
     if (username === admin.username)
       return res.status(400).json({ error: "不能修改自己的等級" });
 
-    // 🔹 先找到 user_id
+    // 🔹 先找到 user_id 與舊等級
     const targetRes = await pool.query(
-      `SELECT id FROM users WHERE username = $1`,
-      [username]
+      `SELECT u.id, s.level AS old_level
+       FROM users u
+       JOIN user_room_stats s ON s.user_id = u.id AND s.room = $2
+       WHERE u.username = $1`,
+      [username, ROOM]
     );
 
     if (!targetRes.rows.length)
       return res.status(404).json({ error: "使用者不存在" });
 
-    const userId = targetRes.rows[0].id;
+    const { id: userId, old_level: oldLevel } = targetRes.rows[0];
 
     if (level > admin.level)
       return res.status(400).json({ error: "不能設定高於自己的等級" });
 
     // 🔥 更新指定 ROOM 的等級
     await pool.query(
-      `
-      UPDATE user_room_stats
-      SET level = $1
-      WHERE user_id = $2 AND room = $3
-      `,
+      `UPDATE user_room_stats SET level = $1 WHERE user_id = $2 AND room = $3`,
       [level, userId, ROOM]
+    );
+
+    // 📝 記錄操作日誌
+    await pool.query(
+      `INSERT INTO admin_adjustment_logs
+         (admin_username, target_username, adjustment_type, old_value, new_value, reason, room)
+       VALUES ($1, $2, 'level', $3, $4, $5, $6)`,
+      [admin.username, username, oldLevel, level, reason, ROOM]
     );
 
     res.json({ success: true });
@@ -200,6 +207,125 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("調整使用者等級失敗", err);
     res.status(500).json({ error: "操作失敗" });
+  }
+});
+
+/* ================= 調整使用者金蘋果 ================= */
+adminRouter.post("/set-user-gold", authMiddleware, async (req, res) => {
+  try {
+    const admin = req.user;
+    const { username, gold_apples, reason = "" } = req.body;
+
+    if (!admin || admin.level < AML)
+      return res.status(403).json({ error: "權限不足" });
+
+    if (!username || typeof gold_apples !== "number" || !Number.isInteger(gold_apples) || gold_apples < 0)
+      return res.status(400).json({ error: "參數錯誤：gold_apples 須為非負整數" });
+
+    if (gold_apples > MAX_GOLD_APPLES)
+      return res.status(400).json({ error: `金蘋果不能超過 ${MAX_GOLD_APPLES}` });
+
+    // 🔹 先找到 user_id 與舊金蘋果數
+    const targetRes = await pool.query(
+      `SELECT u.id, s.gold_apples AS old_gold
+       FROM users u
+       JOIN user_room_stats s ON s.user_id = u.id AND s.room = $2
+       WHERE u.username = $1`,
+      [username, ROOM]
+    );
+
+    if (!targetRes.rows.length)
+      return res.status(404).json({ error: "使用者不存在" });
+
+    const { id: userId, old_gold: oldGold } = targetRes.rows[0];
+
+    // 🔥 更新金蘋果
+    await pool.query(
+      `UPDATE user_room_stats SET gold_apples = $1 WHERE user_id = $2 AND room = $3`,
+      [gold_apples, userId, ROOM]
+    );
+
+    // 📝 記錄操作日誌
+    await pool.query(
+      `INSERT INTO admin_adjustment_logs
+         (admin_username, target_username, adjustment_type, old_value, new_value, reason, room)
+       VALUES ($1, $2, 'gold_apples', $3, $4, $5, $6)`,
+      [admin.username, username, oldGold, gold_apples, reason, ROOM]
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("調整使用者金蘋果失敗", err);
+    res.status(500).json({ error: "操作失敗" });
+  }
+});
+
+/* ================= 查詢管理員調整日誌 ================= */
+adminRouter.post("/adjustment-logs", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || user.level < AML)
+      return res.status(403).json({ error: "權限不足" });
+
+    const {
+      page = 1,
+      pageSize = 50,
+      admin_username,
+      target_username,
+      adjustment_type,
+      from,
+      to,
+    } = req.body;
+
+    const offset = (page - 1) * pageSize;
+    const conditions = [`room = $1`];
+    const values = [ROOM];
+    let i = 2;
+
+    if (admin_username) {
+      conditions.push(`admin_username ILIKE $${i++}`);
+      values.push(`%${admin_username}%`);
+    }
+    if (target_username) {
+      conditions.push(`target_username ILIKE $${i++}`);
+      values.push(`%${target_username}%`);
+    }
+    if (adjustment_type) {
+      conditions.push(`adjustment_type = $${i++}`);
+      values.push(adjustment_type);
+    }
+    if (from) {
+      conditions.push(`created_at >= $${i++}`);
+      values.push(from);
+    }
+    if (to) {
+      conditions.push(`created_at <= $${i++}`);
+      values.push(to);
+    }
+
+    const whereSql = `WHERE ${conditions.join(" AND ")}`;
+
+    const totalRes = await pool.query(
+      `SELECT COUNT(*) FROM admin_adjustment_logs ${whereSql}`,
+      values
+    );
+    const total = parseInt(totalRes.rows[0].count, 10);
+
+    const dataRes = await pool.query(
+      `SELECT id, admin_username, target_username, adjustment_type,
+              old_value, new_value, reason, created_at
+       FROM admin_adjustment_logs
+       ${whereSql}
+       ORDER BY created_at DESC
+       LIMIT $${i++} OFFSET $${i++}`,
+      [...values, pageSize, offset]
+    );
+
+    res.json({ page, pageSize, total, logs: dataRes.rows });
+  } catch (err) {
+    console.error("查詢調整日誌失敗", err);
+    res.status(500).json({ error: "查詢失敗" });
   }
 });
 
@@ -536,6 +662,27 @@ adminRouter.get("/surprise-history", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "查詢失敗" });
   }
 });
+
+/* ================= 建立 admin_adjustment_logs 表（若不存在） ================= */
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS admin_adjustment_logs (
+        id              SERIAL PRIMARY KEY,
+        admin_username  VARCHAR NOT NULL,
+        target_username VARCHAR NOT NULL,
+        adjustment_type VARCHAR NOT NULL,
+        old_value       INT,
+        new_value       INT NOT NULL,
+        reason          VARCHAR DEFAULT '',
+        room            VARCHAR NOT NULL,
+        created_at      TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+  } catch (err) {
+    console.error('建立 admin_adjustment_logs 表失敗', err);
+  }
+})();
 
 /* ================= 使用者查自己的發言（可選日期 / 預設最近 2 天） ================= */
 adminRouter.post("/my-message-logs", authMiddleware, async (req, res) => {
