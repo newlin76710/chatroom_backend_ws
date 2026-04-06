@@ -433,7 +433,7 @@ authRouter.post("/login", _loginLimiter, async (req, res) => {
 
     // 從資料庫取得帳號資訊（密碼、基本資料）
     const result = await pool.query(
-      `SELECT id, username, password, avatar, gender, phone, email, birthday, phone_confirm, email_confirm
+      `SELECT id, username, password, password_type, avatar, gender, phone, email, birthday, phone_confirm, email_confirm
        FROM users WHERE username=$1`,
       [username]
     );
@@ -441,7 +441,24 @@ authRouter.post("/login", _loginLimiter, async (req, res) => {
     if (!result.rowCount) return res.status(400).json({ error: "帳號不存在" });
 
     const user = result.rows[0];
-    const match = await bcrypt.compare(password, user.password);
+
+    // ── 密碼驗證：支援 md5（舊帳號）與 bcrypt（新帳號） ──
+    const pwType = user.password_type || 'bcrypt';
+    let match = false;
+    if (pwType === 'md5') {
+      const inputMd5 = crypto.createHash('md5').update(password).digest('hex');
+      match = inputMd5 === user.password;
+      if (match) {
+        // 第一次登入成功，自動升級為 bcrypt
+        const newHash = await bcrypt.hash(password, 10);
+        await pool.query(
+          `UPDATE users SET password = $1, password_type = 'bcrypt' WHERE id = $2`,
+          [newHash, user.id]
+        );
+      }
+    } else {
+      match = await bcrypt.compare(password, user.password);
+    }
     if (!match) return res.status(400).json({ error: "密碼錯誤" });
 
     // // ===== 檢查手機與 Email 是否填寫 =====
@@ -652,8 +669,8 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "生日格式錯誤，請使用 YYYY-MM-DD" });
     }
 
-    // 如果有改密碼就 hash
-    let hashedPassword = user.password; // 原本密碼
+    // 如果有改密碼就 hash（並統一升級為 bcrypt）
+    let hashedPassword = undefined;
     if (password && password.trim() !== "") {
       hashedPassword = await bcrypt.hash(password, 10);
     }
@@ -671,26 +688,30 @@ authRouter.post("/updateProfile", authMiddleware, async (req, res) => {
     const phoneChanged = newPhone !== (oldData.phone || null);
     const emailChanged = newEmail !== (oldData.email || null);
 
+    // 密碼有變更才加入 SET；順便把 password_type 升為 bcrypt
+    const pwSetClause = hashedPassword ? `, password = $10, password_type = 'bcrypt'` : "";
+    const baseParams = [
+      username || user.username,
+      gender || user.gender,
+      avatar || user.avatar,
+      newPhone,
+      newEmail,
+      birthdayValue,
+      phoneChanged,
+      emailChanged,
+      user.id,
+    ];
+
     const updateRes = await pool.query(
       `UPDATE users
-     SET username = $1, password = $2, gender = $3, avatar = $4, phone = $5, email = $6,
-         birthday = $7,
-         phone_confirm = CASE WHEN $8 THEN false ELSE phone_confirm END,
-         email_confirm = CASE WHEN $9 THEN false ELSE email_confirm END
-     WHERE id = $10
-     RETURNING id, username, gender, avatar, birthday, phone_confirm, email_confirm`,
-      [
-        username || user.username,
-        hashedPassword,
-        gender || user.gender,
-        avatar || user.avatar,
-        newPhone,
-        newEmail,
-        birthdayValue,
-        phoneChanged,
-        emailChanged,
-        user.id,
-      ]
+       SET username = $1, gender = $2, avatar = $3, phone = $4, email = $5,
+           birthday = $6,
+           phone_confirm = CASE WHEN $7 THEN false ELSE phone_confirm END,
+           email_confirm = CASE WHEN $8 THEN false ELSE email_confirm END
+           ${pwSetClause}
+       WHERE id = $9
+       RETURNING id, username, gender, avatar, birthday, phone_confirm, email_confirm`,
+      hashedPassword ? [...baseParams, hashedPassword] : baseParams
     );
 
     res.json({ message: "修改成功", user: updateRes.rows[0] });
@@ -737,9 +758,9 @@ authRouter.post("/forgotPassword", async (req, res) => {
     const newPassword = crypto.randomBytes(6).toString("hex"); // 12位隨機密碼
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // 更新資料庫
+    // 更新資料庫（同時升級為 bcrypt）
     await pool.query(
-      `UPDATE users SET password=$1 WHERE id=$2`,
+      `UPDATE users SET password=$1, password_type='bcrypt' WHERE id=$2`,
       [hashedPassword, user.id]
     );
 
