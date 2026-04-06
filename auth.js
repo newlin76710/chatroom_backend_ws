@@ -486,19 +486,34 @@ authRouter.post("/login", _loginLimiter, async (req, res) => {
 
     if (!statsRes.rowCount) {
       // 首次進入房間
+      // 用 ON CONFLICT DO NOTHING 防止並發雙重登入造成 duplicate key
       level = 2;
       exp = 0;
       gold_apples = dailyReward;
       rewardApple = dailyReward;
 
-      await pool.query(
+      const insertRes = await pool.query(
         `INSERT INTO user_room_stats
      (user_id, username, room, level, exp, gold_apples, last_login_reward)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (user_id, room) DO NOTHING`,
         [user.id, user.username, room, level, exp, gold_apples, today]
       );
-      // 🔹 新增 gift_logs 記錄
-      if (dailyReward > 0) {
+
+      if (insertRes.rowCount === 0) {
+        // 並發請求已由另一個請求建立，重新讀取實際資料
+        const retryRes = await pool.query(
+          `SELECT level, exp, gold_apples FROM user_room_stats WHERE user_id=$1 AND room=$2`,
+          [user.id, room]
+        );
+        if (retryRes.rowCount) {
+          level      = retryRes.rows[0].level;
+          exp        = retryRes.rows[0].exp;
+          gold_apples = retryRes.rows[0].gold_apples || 0;
+          rewardApple = 0; // 另一個請求已給過登入獎勵
+        }
+      } else if (dailyReward > 0) {
+        // 確實是第一次插入才寫 gift_logs
         await pool.query(
           `INSERT INTO gift_logs
    (room, sender, receiver, receiver_id, item_type, amount, created_at)
