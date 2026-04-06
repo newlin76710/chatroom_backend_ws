@@ -160,13 +160,16 @@ adminRouter.post("/user-levels", authMiddleware, async (req, res) => {
 adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
   try {
     const admin = req.user;
-    const { username, level, reason = "" } = req.body;
+    const { username, level, reason } = req.body;
 
     if (!admin || admin.level < AML)
       return res.status(403).json({ error: "權限不足" });
 
     if (!username || typeof level !== "number")
       return res.status(400).json({ error: "參數錯誤" });
+
+    if (!reason || !String(reason).trim())
+      return res.status(400).json({ error: "調整原因為必填" });
 
     if (username === admin.username)
       return res.status(400).json({ error: "不能修改自己的等級" });
@@ -214,13 +217,16 @@ adminRouter.post("/set-user-level", authMiddleware, async (req, res) => {
 adminRouter.post("/set-user-gold", authMiddleware, async (req, res) => {
   try {
     const admin = req.user;
-    const { username, gold_apples, reason = "" } = req.body;
+    const { username, gold_apples, reason } = req.body;
 
     if (!admin || admin.level < AML)
       return res.status(403).json({ error: "權限不足" });
 
     if (!username || typeof gold_apples !== "number" || !Number.isInteger(gold_apples) || gold_apples < 0)
       return res.status(400).json({ error: "參數錯誤：gold_apples 須為非負整數" });
+
+    if (!reason || !String(reason).trim())
+      return res.status(400).json({ error: "調整原因為必填" });
 
     if (gold_apples > MAX_GOLD_APPLES)
       return res.status(400).json({ error: `金蘋果不能超過 ${MAX_GOLD_APPLES}` });
