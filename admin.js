@@ -238,12 +238,24 @@ adminRouter.post("/set-user-gold", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "使用者不存在" });
 
     const { id: userId, old_gold: oldGold } = targetRes.rows[0];
+    const delta = gold_apples - oldGold;
 
     // 🔥 更新金蘋果
     await pool.query(
       `UPDATE user_room_stats SET gold_apples = $1 WHERE user_id = $2 AND room = $3`,
       [gold_apples, userId, ROOM]
     );
+
+    // 📊 同步寫入 gift_logs，讓月排行榜反映此次調整
+    // delta > 0：admin 加蘋果；delta < 0：admin 扣蘋果（負數抵消）
+    if (delta !== 0) {
+      await pool.query(
+        `INSERT INTO gift_logs
+           (room, sender, sender_id, receiver, receiver_id, item_type, amount)
+         VALUES ($1, 'admin', NULL, $2, $3, 'gold_apples', $4)`,
+        [ROOM, username, userId, delta]
+      );
+    }
 
     // 📝 記錄操作日誌
     await pool.query(

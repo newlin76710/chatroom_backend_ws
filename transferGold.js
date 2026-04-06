@@ -496,10 +496,10 @@ export const createTransferRouter = (io) => {
                     let query = `
                         SELECT
                             u.username,
-                            COALESCE(SUM(CASE WHEN gl.item_type = 'rose'      THEN gl.amount ELSE 0 END), 0) AS rose,
-                            COALESCE(SUM(CASE WHEN gl.item_type = 'chocolate' THEN gl.amount ELSE 0 END), 0) AS chocolate,
-                            COALESCE(SUM(CASE WHEN gl.item_type = 'cake'      THEN gl.amount ELSE 0 END), 0) AS cake,
-                            COALESCE(SUM(gl.amount), 0) AS total
+                            GREATEST(COALESCE(SUM(CASE WHEN gl.item_type = 'rose'      THEN gl.amount ELSE 0 END), 0), 0) AS rose,
+                            GREATEST(COALESCE(SUM(CASE WHEN gl.item_type = 'chocolate' THEN gl.amount ELSE 0 END), 0), 0) AS chocolate,
+                            GREATEST(COALESCE(SUM(CASE WHEN gl.item_type = 'cake'      THEN gl.amount ELSE 0 END), 0), 0) AS cake,
+                            GREATEST(COALESCE(SUM(gl.amount), 0), 0) AS total
                         FROM users u
                         JOIN user_room_stats urs ON u.id = urs.user_id
                         JOIN gift_logs gl ON u.id = gl.receiver_id
@@ -519,7 +519,7 @@ export const createTransferRouter = (io) => {
                     let query = `
                         SELECT
                             u.username,
-                            COALESCE(SUM(gl.amount), 0) AS amount
+                            GREATEST(COALESCE(SUM(gl.amount), 0), 0) AS amount
                         FROM users u
                         JOIN user_room_stats urs ON u.id = urs.user_id
                         JOIN gift_logs gl ON u.id = gl.receiver_id
