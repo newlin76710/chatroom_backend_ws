@@ -496,7 +496,7 @@ authRouter.post("/login", _loginLimiter, async (req, res) => {
         `INSERT INTO user_room_stats
      (user_id, username, room, level, exp, gold_apples, last_login_reward)
      VALUES ($1,$2,$3,$4,$5,$6,$7)
-     ON CONFLICT ON CONSTRAINT ux_user_room DO NOTHING`,
+     ON CONFLICT (user_id, room) DO NOTHING`,
         [user.id, user.username, room, level, exp, gold_apples, today]
       );
 
