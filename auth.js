@@ -585,6 +585,8 @@ authRouter.post("/login", _loginLimiter, async (req, res) => {
       gender: user.gender,
       avatar: user.avatar,
       birthday: user.birthday,
+      phone: user.phone,
+      email: user.email,
       phone_confirm: user.phone_confirm,
       email_confirm: user.email_confirm,
       last_login: now,
