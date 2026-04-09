@@ -19,6 +19,7 @@ import { messageBoardRouter } from "./messageBoardRouter.js";
 import { createTransferRouter } from "./transferGold.js";
 import { initSurpriseScheduler } from "./surpriseGold.js";
 import { initGoldGameScheduler, goldGameSocket } from "./goldAppleGame.js";
+import { initWhackGameScheduler, whackGameSocket } from "./whackAppleGame.js";
 process.on('exit', (code) => console.log('Process exit code:', code));
 process.on('SIGTERM', () => console.log('SIGTERM received'));
 process.on('SIGINT', () => console.log('SIGINT received'));
@@ -152,6 +153,12 @@ io.on("connection", socket => {
     console.error("goldGameSocket error:", err.message);
   }
 
+  try {
+    whackGameSocket(io, socket);
+  } catch (err) {
+    console.error("whackGameSocket error:", err.message);
+  }
+
   socket.on("disconnect", reason => {
     console.log(`🔴 socket disconnected: ${socket.id}`, reason);
   });
@@ -234,4 +241,5 @@ server.listen(port, () => {
   console.log("Server started at:", new Date());
   initSurpriseScheduler(io);
   initGoldGameScheduler(io);
+  initWhackGameScheduler(io);
 });

@@ -3,6 +3,7 @@ import express from "express";
 import { pool } from "./db.js";
 import { authMiddleware } from "./auth.js"; // 驗證 token 並填 req.user
 import { rescheduleGoldGames } from "./goldAppleGame.js";
+import { rescheduleWhackGame } from "./whackAppleGame.js";
 
 export const adminRouter = express.Router();
 const AML = process.env.ADMIN_MAX_LEVEL || 99;
@@ -541,7 +542,12 @@ adminRouter.get("/settings", authMiddleware, async (req, res) => {
               COALESCE(game2_enabled,       true) AS game2_enabled,
               COALESCE(game2_hour,          20)   AS game2_hour,
               COALESCE(game2_minute,        35)   AS game2_minute,
-              COALESCE(game2_reward,        25)   AS game2_reward
+              COALESCE(game2_reward,        25)   AS game2_reward,
+              COALESCE(whack_enabled,       true) AS whack_enabled,
+              COALESCE(whack_hour,          21)   AS whack_hour,
+              COALESCE(whack_minute,        0)    AS whack_minute,
+              COALESCE(whack_duration,      30)   AS whack_duration,
+              COALESCE(whack_reward,        1)    AS whack_reward
        FROM room_settings WHERE room = $1`,
       [ROOM]
     );
@@ -552,6 +558,7 @@ adminRouter.get("/settings", authMiddleware, async (req, res) => {
       game1_enabled: true, game1_hour: 20, game1_minute: 30,
       game1_apple_count: 5, game1_reward: 1,
       game2_enabled: true, game2_hour: 20, game2_minute: 35, game2_reward: 25,
+      whack_enabled: true, whack_hour: 21, whack_minute: 0, whack_duration: 30, whack_reward: 1,
     });
   } catch (err) {
     console.error("取得設定失敗", err);
@@ -571,6 +578,7 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
       daily_transfer_limit, surprise_reward,
       game1_enabled, game1_hour, game1_minute, game1_apple_count, game1_reward,
       game2_enabled, game2_hour, game2_minute, game2_reward,
+      whack_enabled, whack_hour, whack_minute, whack_duration, whack_reward,
     } = req.body;
 
     // 整數欄位驗證
@@ -579,6 +587,7 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
       daily_transfer_limit, surprise_reward,
       game1_hour, game1_minute, game1_apple_count, game1_reward,
       game2_hour, game2_minute, game2_reward,
+      whack_hour, whack_minute, whack_duration, whack_reward,
     };
     for (const [key, val] of Object.entries(intFields)) {
       if (val !== undefined && (!Number.isInteger(val) || val < 0))
@@ -594,11 +603,18 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'game2_hour 必須為 0-23' });
     if (game2_minute !== undefined && (game2_minute < 0 || game2_minute > 59))
       return res.status(400).json({ error: 'game2_minute 必須為 0-59' });
+    if (whack_hour !== undefined && (whack_hour < 0 || whack_hour > 23))
+      return res.status(400).json({ error: 'whack_hour 必須為 0-23' });
+    if (whack_minute !== undefined && (whack_minute < 0 || whack_minute > 59))
+      return res.status(400).json({ error: 'whack_minute 必須為 0-59' });
+    if (whack_duration !== undefined && whack_duration < 10)
+      return res.status(400).json({ error: 'whack_duration 最少 10 秒' });
 
     const allFields = {
       ...intFields,
       game1_enabled: game1_enabled !== undefined ? Boolean(game1_enabled) : undefined,
       game2_enabled: game2_enabled !== undefined ? Boolean(game2_enabled) : undefined,
+      whack_enabled: whack_enabled !== undefined ? Boolean(whack_enabled) : undefined,
     };
 
     if (Object.values(allFields).every(v => v === undefined))
@@ -619,6 +635,7 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
       daily_transfer_limit, surprise_reward,
       game1_enabled, game1_hour, game1_minute, game1_apple_count, game1_reward,
       game2_enabled, game2_hour, game2_minute, game2_reward,
+      whack_enabled, whack_hour, whack_minute, whack_duration, whack_reward,
     };
 
     for (const [col, val] of Object.entries(colMap)) {
@@ -635,12 +652,17 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
     );
 
     // 若遊戲時間相關設定有變更，重新排程
-    const gameFields = [
+    const goldFields = [
       'game1_enabled', 'game1_hour', 'game1_minute', 'game1_apple_count', 'game1_reward',
       'game2_enabled', 'game2_hour', 'game2_minute', 'game2_reward',
     ];
-    if (gameFields.some(f => colMap[f] !== undefined)) {
+    if (goldFields.some(f => colMap[f] !== undefined)) {
       rescheduleGoldGames();
+    }
+
+    const whackFields = ['whack_enabled', 'whack_hour', 'whack_minute', 'whack_duration', 'whack_reward'];
+    if (whackFields.some(f => colMap[f] !== undefined)) {
+      rescheduleWhackGame();
     }
 
     res.json({ success: true });
