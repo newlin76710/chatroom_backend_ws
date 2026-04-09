@@ -37,8 +37,8 @@ async function ensureSchema() {
     ['game2_hour',         'INT DEFAULT 20'],
     ['game2_minute',       'INT DEFAULT 35'],
     ['game2_reward',       'INT DEFAULT 25'],
-    ['game2_spd_lo',       'INT DEFAULT 4'],
-    ['game2_spd_hi',       'INT DEFAULT 6'],
+    ['game2_spd_lo',       'INT DEFAULT 40'],
+    ['game2_spd_hi',       'INT DEFAULT 60'],
   ];
   for (const [col, def] of cols) {
     await pool.query(
@@ -74,8 +74,8 @@ async function getGameSettings() {
        COALESCE(game2_hour,         20)   AS game2_hour,
        COALESCE(game2_minute,       35)   AS game2_minute,
        COALESCE(game2_reward,       25)   AS game2_reward,
-       COALESCE(game2_spd_lo,       4)    AS game2_spd_lo,
-       COALESCE(game2_spd_hi,       6)    AS game2_spd_hi
+       COALESCE(game2_spd_lo,       40)    AS game2_spd_lo,
+       COALESCE(game2_spd_hi,       60)    AS game2_spd_hi
      FROM room_settings WHERE room = $1`,
     [ROOM]
   );
@@ -83,7 +83,7 @@ async function getGameSettings() {
     game1_enabled: true, game1_hour: 20, game1_minute: 30,
     game1_apple_count: 5, game1_reward: 1, game1_spd_lo: 5, game1_spd_hi: 9,
     game2_enabled: true, game2_hour: 20, game2_minute: 35, game2_reward: 25,
-    game2_spd_lo: 4, game2_spd_hi: 6,
+    game2_spd_lo: 40, game2_spd_hi: 60,
   };
 }
 
