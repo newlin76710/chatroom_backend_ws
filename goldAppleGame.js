@@ -31,10 +31,14 @@ async function ensureSchema() {
     ['game1_minute',       'INT DEFAULT 30'],
     ['game1_apple_count',  'INT DEFAULT 5'],
     ['game1_reward',       'INT DEFAULT 1'],
+    ['game1_spd_lo',       'INT DEFAULT 5'],
+    ['game1_spd_hi',       'INT DEFAULT 9'],
     ['game2_enabled',      'BOOLEAN DEFAULT true'],
     ['game2_hour',         'INT DEFAULT 20'],
     ['game2_minute',       'INT DEFAULT 35'],
     ['game2_reward',       'INT DEFAULT 25'],
+    ['game2_spd_lo',       'INT DEFAULT 4'],
+    ['game2_spd_hi',       'INT DEFAULT 6'],
   ];
   for (const [col, def] of cols) {
     await pool.query(
@@ -64,17 +68,22 @@ async function getGameSettings() {
        COALESCE(game1_minute,       30)   AS game1_minute,
        COALESCE(game1_apple_count,  5)    AS game1_apple_count,
        COALESCE(game1_reward,       1)    AS game1_reward,
+       COALESCE(game1_spd_lo,       5)    AS game1_spd_lo,
+       COALESCE(game1_spd_hi,       9)    AS game1_spd_hi,
        COALESCE(game2_enabled,      true) AS game2_enabled,
        COALESCE(game2_hour,         20)   AS game2_hour,
        COALESCE(game2_minute,       35)   AS game2_minute,
-       COALESCE(game2_reward,       25)   AS game2_reward
+       COALESCE(game2_reward,       25)   AS game2_reward,
+       COALESCE(game2_spd_lo,       4)    AS game2_spd_lo,
+       COALESCE(game2_spd_hi,       6)    AS game2_spd_hi
      FROM room_settings WHERE room = $1`,
     [ROOM]
   );
   return res.rows[0] || {
     game1_enabled: true, game1_hour: 20, game1_minute: 30,
-    game1_apple_count: 5, game1_reward: 1,
+    game1_apple_count: 5, game1_reward: 1, game1_spd_lo: 5, game1_spd_hi: 9,
     game2_enabled: true, game2_hour: 20, game2_minute: 35, game2_reward: 25,
+    game2_spd_lo: 4, game2_spd_hi: 6,
   };
 }
 
@@ -220,6 +229,8 @@ async function startGame1(io, settings) {
     appleCount,
     appleIds:   apples.map(a => a.id),
     reward:     settings.game1_reward,
+    speedLo:    settings.game1_spd_lo,
+    speedHi:    settings.game1_spd_hi,
   });
   io.to(ROOM).emit('systemMessage', `🍎 撈金蘋果遊戲開始！螢幕上有 ${appleCount} 顆金蘋果，快搶！共一分鐘！`);
 
@@ -331,7 +342,9 @@ async function startGame2(io, settings) {
   };
 
   io.to(ROOM).emit('goldGame2Start', {
-    reward: settings.game2_reward,
+    reward:   settings.game2_reward,
+    speedLo:  settings.game2_spd_lo,
+    speedHi:  settings.game2_spd_hi,
   });
   io.to(ROOM).emit('systemMessage', `🔥 搶金蘋果！第一個點到的人可得 ${settings.game2_reward} 顆金蘋果！`);
 

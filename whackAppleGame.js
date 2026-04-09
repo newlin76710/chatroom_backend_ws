@@ -33,11 +33,15 @@ let warnTimer     = null;
 // ─── DB Schema ────────────────────────────────────────────────────────────────
 async function ensureSchema() {
   const cols = [
-    ['whack_enabled',  'BOOLEAN DEFAULT true'],
-    ['whack_hour',     'INT DEFAULT 21'],
-    ['whack_minute',   'INT DEFAULT 0'],
-    ['whack_duration', 'INT DEFAULT 30'],
-    ['whack_reward',   'INT DEFAULT 1'],
+    ['whack_enabled',     'BOOLEAN DEFAULT true'],
+    ['whack_hour',        'INT DEFAULT 21'],
+    ['whack_minute',      'INT DEFAULT 0'],
+    ['whack_duration',    'INT DEFAULT 30'],
+    ['whack_reward',      'INT DEFAULT 1'],
+    ['whack_ms_lo',       'INT DEFAULT 350'],
+    ['whack_ms_hi',       'INT DEFAULT 700'],
+    ['whack_min_apples',  'INT DEFAULT 4'],
+    ['whack_max_apples',  'INT DEFAULT 7'],
   ];
   for (const [col, def] of cols) {
     await pool.query(
@@ -51,17 +55,23 @@ async function ensureSchema() {
 async function getSettings() {
   const res = await pool.query(
     `SELECT
-       COALESCE(whack_enabled,  true) AS whack_enabled,
-       COALESCE(whack_hour,     21)   AS whack_hour,
-       COALESCE(whack_minute,   0)    AS whack_minute,
-       COALESCE(whack_duration, 30)   AS whack_duration,
-       COALESCE(whack_reward,   1)    AS whack_reward
+       COALESCE(whack_enabled,    true) AS whack_enabled,
+       COALESCE(whack_hour,       21)   AS whack_hour,
+       COALESCE(whack_minute,     0)    AS whack_minute,
+       COALESCE(whack_duration,   30)   AS whack_duration,
+       COALESCE(whack_reward,     1)    AS whack_reward,
+       COALESCE(whack_ms_lo,      350)  AS whack_ms_lo,
+       COALESCE(whack_ms_hi,      700)  AS whack_ms_hi,
+       COALESCE(whack_min_apples, 4)    AS whack_min_apples,
+       COALESCE(whack_max_apples, 7)    AS whack_max_apples
      FROM room_settings WHERE room = $1`,
     [ROOM]
   );
   return res.rows[0] || {
     whack_enabled: true, whack_hour: 21, whack_minute: 0,
     whack_duration: 30, whack_reward: 1,
+    whack_ms_lo: 350, whack_ms_hi: 700,
+    whack_min_apples: 4, whack_max_apples: 7,
   };
 }
 
@@ -162,7 +172,14 @@ export async function startWhackGame(io) {
     console.error('[WhackGame] log insert error:', err);
   }
 
-  const { whack_duration: duration, whack_reward: reward } = settings;
+  const {
+    whack_duration:   duration,
+    whack_reward:     reward,
+    whack_ms_lo:      msLo,
+    whack_ms_hi:      msHi,
+    whack_min_apples: minApples,
+    whack_max_apples: maxApples,
+  } = settings;
 
   whackState = {
     active:      true,
@@ -174,7 +191,14 @@ export async function startWhackGame(io) {
     timer: null,
   };
 
-  io.to(ROOM).emit('whackGameStart', { duration, reward });
+  io.to(ROOM).emit('whackGameStart', {
+    duration,
+    reward,
+    msLo,
+    msHi,
+    minApples,
+    maxApples,
+  });
   io.to(ROOM).emit('systemMessage',
     `🔨 打金蘋果遊戲開始！用力打從洞裡跑出來的金蘋果！共 ${duration} 秒，每打一顆得 ${reward} 個🍎！`
   );

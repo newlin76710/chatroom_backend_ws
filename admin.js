@@ -539,15 +539,23 @@ adminRouter.get("/settings", authMiddleware, async (req, res) => {
               COALESCE(game1_minute,        30)   AS game1_minute,
               COALESCE(game1_apple_count,   5)    AS game1_apple_count,
               COALESCE(game1_reward,        1)    AS game1_reward,
+              COALESCE(game1_spd_lo,        5)    AS game1_spd_lo,
+              COALESCE(game1_spd_hi,        9)    AS game1_spd_hi,
               COALESCE(game2_enabled,       true) AS game2_enabled,
               COALESCE(game2_hour,          20)   AS game2_hour,
               COALESCE(game2_minute,        35)   AS game2_minute,
               COALESCE(game2_reward,        25)   AS game2_reward,
+              COALESCE(game2_spd_lo,        4)    AS game2_spd_lo,
+              COALESCE(game2_spd_hi,        6)    AS game2_spd_hi,
               COALESCE(whack_enabled,       true) AS whack_enabled,
               COALESCE(whack_hour,          21)   AS whack_hour,
               COALESCE(whack_minute,        0)    AS whack_minute,
               COALESCE(whack_duration,      30)   AS whack_duration,
-              COALESCE(whack_reward,        1)    AS whack_reward
+              COALESCE(whack_reward,        1)    AS whack_reward,
+              COALESCE(whack_ms_lo,         350)  AS whack_ms_lo,
+              COALESCE(whack_ms_hi,         700)  AS whack_ms_hi,
+              COALESCE(whack_min_apples,    4)    AS whack_min_apples,
+              COALESCE(whack_max_apples,    7)    AS whack_max_apples
        FROM room_settings WHERE room = $1`,
       [ROOM]
     );
@@ -556,9 +564,11 @@ adminRouter.get("/settings", authMiddleware, async (req, res) => {
       daily_login_reward: 1, singing_reward: 2, per_transfer_limit: 0,
       daily_transfer_limit: 0, surprise_reward: 10,
       game1_enabled: true, game1_hour: 20, game1_minute: 30,
-      game1_apple_count: 5, game1_reward: 1,
+      game1_apple_count: 5, game1_reward: 1, game1_spd_lo: 5, game1_spd_hi: 9,
       game2_enabled: true, game2_hour: 20, game2_minute: 35, game2_reward: 25,
+      game2_spd_lo: 4, game2_spd_hi: 6,
       whack_enabled: true, whack_hour: 21, whack_minute: 0, whack_duration: 30, whack_reward: 1,
+      whack_ms_lo: 350, whack_ms_hi: 700, whack_min_apples: 4, whack_max_apples: 7,
     });
   } catch (err) {
     console.error("取得設定失敗", err);
@@ -577,8 +587,11 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
       daily_login_reward, singing_reward, per_transfer_limit,
       daily_transfer_limit, surprise_reward,
       game1_enabled, game1_hour, game1_minute, game1_apple_count, game1_reward,
+      game1_spd_lo, game1_spd_hi,
       game2_enabled, game2_hour, game2_minute, game2_reward,
+      game2_spd_lo, game2_spd_hi,
       whack_enabled, whack_hour, whack_minute, whack_duration, whack_reward,
+      whack_ms_lo, whack_ms_hi, whack_min_apples, whack_max_apples,
     } = req.body;
 
     // 整數欄位驗證
@@ -586,8 +599,11 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
       daily_login_reward, singing_reward, per_transfer_limit,
       daily_transfer_limit, surprise_reward,
       game1_hour, game1_minute, game1_apple_count, game1_reward,
+      game1_spd_lo, game1_spd_hi,
       game2_hour, game2_minute, game2_reward,
+      game2_spd_lo, game2_spd_hi,
       whack_hour, whack_minute, whack_duration, whack_reward,
+      whack_ms_lo, whack_ms_hi, whack_min_apples, whack_max_apples,
     };
     for (const [key, val] of Object.entries(intFields)) {
       if (val !== undefined && (!Number.isInteger(val) || val < 0))
@@ -634,8 +650,11 @@ adminRouter.post("/set-settings", authMiddleware, async (req, res) => {
       daily_login_reward, singing_reward, per_transfer_limit,
       daily_transfer_limit, surprise_reward,
       game1_enabled, game1_hour, game1_minute, game1_apple_count, game1_reward,
+      game1_spd_lo, game1_spd_hi,
       game2_enabled, game2_hour, game2_minute, game2_reward,
+      game2_spd_lo, game2_spd_hi,
       whack_enabled, whack_hour, whack_minute, whack_duration, whack_reward,
+      whack_ms_lo, whack_ms_hi, whack_min_apples, whack_max_apples,
     };
 
     for (const [col, val] of Object.entries(colMap)) {
